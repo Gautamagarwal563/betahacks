@@ -100,7 +100,7 @@ def _seedance_clip(shot: Shot, out_dir: Path) -> Path:
 
 def _fal_clip(shot: Shot, out_dir: Path) -> Path:
     """Real Seedance 2.0 via fal.ai gateway (paid, US-accessible)."""
-    dur = max(5, int(round(shot.duration)))
+    dur = max(5, min(10, int(round(shot.duration))))   # fal seedance lite: 5-10s
     res = fal_client.generate_video(
         prompt=shot.prompt,
         image_url=shot.keyframe_url,
