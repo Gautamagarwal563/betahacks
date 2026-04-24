@@ -1,0 +1,18 @@
+{
+  "name": "conduit-remotion",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "remotion render ConduitCinema out.mp4",
+    "studio": "remotion studio"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.400",
+    "remotion": "^4.0.400",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/react": "^19.0.0"
+  }
+}
