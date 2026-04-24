@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import byteplus
+import director as _director
 from director import Session, Shot, ShotStatus
 
 CLIP_MODE = os.getenv("CLIP_MODE", "kenburns")
@@ -46,6 +47,7 @@ def emit(event: str, data: dict) -> None:
 
 def render_keyframe(session: Session, shot: Shot) -> None:
     shot.status = ShotStatus.KEYFRAME
+    _director.dump_session(session)
     emit("shot.status", {"call_id": session.call_id, "shot_id": shot.id, "status": shot.status.value})
     img = byteplus.generate_image(shot.prompt)
     run_dir = VIDEOS_DIR / session.call_id / "keyframes"
@@ -54,6 +56,7 @@ def render_keyframe(session: Session, shot: Shot) -> None:
     byteplus.download(img.url, dest)
     shot.keyframe_url = img.url
     shot.keyframe_path = str(dest)
+    _director.dump_session(session)
     emit("shot.keyframe", {
         "call_id": session.call_id, "shot_id": shot.id,
         "keyframe_url": img.url, "keyframe_path": str(dest),
@@ -98,6 +101,7 @@ def render_clip(session: Session, shot: Shot) -> None:
     if not shot.keyframe_path:
         render_keyframe(session, shot)
     shot.status = ShotStatus.RENDERING
+    _director.dump_session(session)
     emit("shot.status", {"call_id": session.call_id, "shot_id": shot.id, "status": shot.status.value})
     out_dir = VIDEOS_DIR / session.call_id / "clips"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +113,7 @@ def render_clip(session: Session, shot: Shot) -> None:
     except Exception as e:
         shot.error = str(e)
         shot.status = ShotStatus.FAILED
+    _director.dump_session(session)
     emit("shot.clip", {
         "call_id": session.call_id, "shot_id": shot.id,
         "status": shot.status.value,
