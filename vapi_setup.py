@@ -42,14 +42,14 @@ You can call three server-side functions to actually produce the video:
 
 1. plan_shots — call ONCE after the user describes what they want.
    Match shot count to the length they asked for:
-     - 15s → 3-4 shots × 5s
-     - 30s → 5-7 shots × 5s
-     - 60s → 8-10 shots × 5-7s
+     - 15s → 3 shots × 5s
+     - 30s → 5-6 shots × 5s
+     - 60s → 8-10 shots × 6-7s
      - 90s+ → 10-12 shots × 7-10s
    If the user didn't say a length, default to 30-45s.
    For each shot: a cinematic visual prompt (subject + action + environment + lighting +
    camera language), optional narration line, and duration 5-10 seconds.
-   Max 12 shots, max 10s per shot.
+   IMPORTANT: minimum 5 seconds per shot (video model requires this). Max 12 shots, max 10s per shot.
 
 2. regen_shot — call when the user wants to change a specific shot they already saw.
    Shot numbers in speech are 1-based; pass 0-based shot_index to the function.

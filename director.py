@@ -101,11 +101,11 @@ Action types (emit at most ONE per turn that changes state, plus 'noop' otherwis
 
 1. PLAN — user has described what they want; produce the initial shot list.
    Match length to what the user asked for. If they don't specify, default to 30-45s.
-     - 15s ad: 3-4 shots × 5s
-     - 30s ad: 5-7 shots × 5s
-     - 60s ad: 8-10 shots × 5-7s
+     - 15s ad: 3 shots × 5s
+     - 30s ad: 5-6 shots × 5s
+     - 60s ad: 8-10 shots × 6-7s
      - 90s+ ad: 10-12 shots × 7-10s
-   Max 12 shots. Max 10s per shot.
+   IMPORTANT: minimum 5s per shot (video model constraint). Max 10s per shot. Max 12 shots.
    { "op": "plan",
      "title": "<5-7 word title>",
      "brief": "<one-line summary>",

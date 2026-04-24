@@ -46,11 +46,20 @@ def emit(event: str, data: dict) -> None:
 
 # ---------- single-shot render ----------
 
-def render_keyframe(session: Session, shot: Shot) -> None:
+def render_keyframe(session: Session, shot: Shot) -> bool:
+    """Returns True if keyframe succeeded, False if Seedream is unavailable.
+    Caller should fall back to text-to-video when this returns False."""
     shot.status = ShotStatus.KEYFRAME
     _director.dump_session(session)
     emit("shot.status", {"call_id": session.call_id, "shot_id": shot.id, "status": shot.status.value})
-    img = byteplus.generate_image(shot.prompt)
+    try:
+        img = byteplus.generate_image(shot.prompt)
+    except byteplus.OverdueError:
+        print(f"  [keyframe {shot.index}] Seedream overdue — will use T2V fallback")
+        return False
+    except Exception as e:
+        print(f"  [keyframe {shot.index}] failed: {e} — will use T2V fallback")
+        return False
     run_dir = VIDEOS_DIR / session.call_id / "keyframes"
     run_dir.mkdir(parents=True, exist_ok=True)
     dest = run_dir / f"kf_{shot.index:02d}.jpeg"
@@ -62,6 +71,7 @@ def render_keyframe(session: Session, shot: Shot) -> None:
         "call_id": session.call_id, "shot_id": shot.id,
         "keyframe_url": img.url, "keyframe_path": str(dest),
     })
+    return True
 
 
 def _kenburns_clip(shot: Shot, out_dir: Path) -> Path:
@@ -113,25 +123,31 @@ def _fal_clip(shot: Shot, out_dir: Path) -> Path:
 
 
 def render_clip(session: Session, shot: Shot) -> None:
-    if not shot.keyframe_path:
-        render_keyframe(session, shot)
-    shot.status = ShotStatus.RENDERING
-    _director.dump_session(session)
-    emit("shot.status", {"call_id": session.call_id, "shot_id": shot.id, "status": shot.status.value})
-    out_dir = VIDEOS_DIR / session.call_id / "clips"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    renderer = {
-        "seedance": _seedance_clip,
-        "fal": _fal_clip,
-        "kenburns": _kenburns_clip,
-    }.get(CLIP_MODE, _kenburns_clip)
     try:
+        if not shot.keyframe_path:
+            render_keyframe(session, shot)  # may return False; that's fine
+        shot.status = ShotStatus.RENDERING
+        _director.dump_session(session)
+        emit("shot.status", {"call_id": session.call_id, "shot_id": shot.id, "status": shot.status.value})
+        out_dir = VIDEOS_DIR / session.call_id / "clips"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # pick renderer; if we have no keyframe and mode is kenburns (needs a still), force fal T2V
+        effective_mode = CLIP_MODE
+        if CLIP_MODE == "kenburns" and not shot.keyframe_url:
+            print(f"  [clip {shot.index}] no keyframe — kenburns impossible, forcing fal T2V")
+            effective_mode = "fal"
+        renderer = {
+            "seedance": _seedance_clip,
+            "fal": _fal_clip,
+            "kenburns": _kenburns_clip,
+        }.get(effective_mode, _fal_clip)
         path = renderer(shot, out_dir)
         shot.clip_path = str(path)
         shot.status = ShotStatus.DONE
     except Exception as e:
-        shot.error = str(e)
+        shot.error = f"{type(e).__name__}: {e}"
         shot.status = ShotStatus.FAILED
+        print(f"  [clip {shot.index}] FAILED: {shot.error}")
     _director.dump_session(session)
     emit("shot.clip", {
         "call_id": session.call_id, "shot_id": shot.id,
@@ -209,10 +225,15 @@ def finalize(session: Session) -> Path:
     narration = render_narration(session, run_dir)
     final = run_dir / "final.mp4"
     if narration:
+        # Pad narration audio with silence; use video length as the truth (not planned
+        # shot.duration, which may differ from actual clip length due to model minimums).
         subprocess.run([
             "ffmpeg", "-y", "-i", str(silent), "-i", str(narration),
+            "-filter_complex", "[1:a]apad[aud]",
+            "-map", "0:v:0", "-map", "[aud]",
             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-            "-map", "0:v:0", "-map", "1:a:0", "-shortest",
+            "-shortest",  # shortest applies to [aud] (now padded to infinity) vs video,
+                          # so output = exactly video length. Safe because apad makes audio infinite.
             str(final),
         ], check=True, capture_output=True)
     else:

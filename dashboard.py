@@ -212,10 +212,11 @@ CALL_HTML = """<!doctype html>
 const CALL_ID = "__CALL_ID__";
 
 function renderShots(shots) {
+  const cb = Date.now();
   return shots.map(s => {
     let media = '<img src="" alt="">';
-    if (s.clip_path) media = `<video src="/videos/${CALL_ID}/clips/${s.clip_path.split('/').pop()}" controls muted></video>`;
-    else if (s.keyframe_path) media = `<img src="/videos/${CALL_ID}/keyframes/${s.keyframe_path.split('/').pop()}">`;
+    if (s.clip_path) media = `<video src="/videos/${CALL_ID}/clips/${s.clip_path.split('/').pop()}?t=${cb}" controls muted></video>`;
+    else if (s.keyframe_path) media = `<img src="/videos/${CALL_ID}/keyframes/${s.keyframe_path.split('/').pop()}?t=${cb}">`;
     return `<div class="shot">
       ${media}
       <span class="badge ${s.status}">${s.status}</span>
@@ -240,10 +241,11 @@ function renderFinal(s) {
   const el = document.getElementById('final');
   if (!s.final_video_path) { el.innerHTML=''; return; }
   const fname = s.final_video_path.split('/').pop();
+  const cb = Date.now();
   el.innerHTML = `<div class="final">
     <div style="margin-bottom:.5rem">✓ finalized</div>
-    <video src="/videos/${CALL_ID}/${fname}" controls></video>
-    <div style="margin-top:.5rem"><a href="/videos/${CALL_ID}/${fname}" download>download</a></div>
+    <video src="/videos/${CALL_ID}/${fname}?t=${cb}" controls></video>
+    <div style="margin-top:.5rem"><a href="/videos/${CALL_ID}/${fname}?t=${cb}" download>download</a></div>
   </div>`;
 }
 
