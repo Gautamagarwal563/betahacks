@@ -125,6 +125,44 @@ def api_session(call_id: str):
     return json.loads(p.read_text())
 
 
+@app.post("/api/regen/{call_id}/{shot_index}")
+async def api_regen(call_id: str, shot_index: int, req: Request):
+    """UI-triggered shot regen. Body: {"new_prompt": "...", "new_narration": "...", "new_intent": "..."}"""
+    import director, pipeline
+    data = await req.json()
+    sess = director.load_session(call_id)
+    if not sess:
+        return JSONResponse({"error": "session not found"}, status_code=404)
+    if shot_index < 0 or shot_index >= len(sess.shots):
+        return JSONResponse({"error": "bad shot index"}, status_code=400)
+    shot = director.apply_regen(sess, {
+        "shot_index": shot_index,
+        "new_prompt": data.get("new_prompt") or sess.shots[shot_index].prompt,
+        "new_intent": data.get("new_intent") or sess.shots[shot_index].intent,
+        "new_narration": data.get("new_narration", sess.shots[shot_index].narration),
+    })
+    if not shot:
+        return JSONResponse({"error": "regen failed"}, status_code=500)
+    director.dump_session(sess)
+    pipeline.render_shot_async(sess, shot)
+    return {"ok": True, "shot_index": shot.index, "status": shot.status.value}
+
+
+@app.post("/api/finalize/{call_id}")
+async def api_finalize(call_id: str):
+    """UI-triggered stitch. Only works if all shots are done."""
+    import director, pipeline
+    sess = director.load_session(call_id)
+    if not sess:
+        return JSONResponse({"error": "session not found"}, status_code=404)
+    try:
+        final = pipeline.finalize(sess)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    director.dump_session(sess)
+    return {"ok": True, "path": str(final)}
+
+
 @app.get("/call/{call_id}", response_class=HTMLResponse)
 def call_page(call_id: str):
     return CALL_HTML.replace("__CALL_ID__", call_id)
@@ -670,6 +708,47 @@ __BASE_STYLE__
     background: var(--accent); color: #000; border-color: var(--accent);
   }
   .btn.primary:hover { background: var(--text); color: #000; border-color: var(--text); }
+
+  .shot-actions {
+    position: absolute; bottom: 10px; right: 10px; display: flex; gap: 6px;
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .shot:hover .shot-actions { opacity: 1; }
+  .shot-btn {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 5px 10px; border-radius: 6px;
+    background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2);
+    color: var(--text); cursor: pointer; transition: all .15s;
+    backdrop-filter: blur(8px);
+  }
+  .shot-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .regen-form {
+    background: rgba(0,0,0,0.92); position: absolute; inset: 0; padding: 18px;
+    display: flex; flex-direction: column; gap: 10px; z-index: 10;
+  }
+  .regen-form textarea {
+    flex: 1; background: var(--surface); border: 1px solid var(--border-2);
+    color: var(--text); padding: 10px; border-radius: 8px;
+    font-family: var(--mono); font-size: 12px; resize: none; outline: none;
+  }
+  .regen-form textarea:focus { border-color: var(--accent); }
+  .regen-form .row { display: flex; gap: 6px; }
+  .regen-form .row .btn { flex: 1; text-align: center; font-size: 11px; padding: 8px 10px; }
+
+  .top-actions {
+    display: flex; gap: 10px; margin-left: auto; align-items: center;
+  }
+  .action-btn {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+    padding: 8px 14px; border-radius: 8px; background: var(--surface-2);
+    border: 1px solid var(--border-2); color: var(--text); cursor: pointer;
+    transition: all .18s ease;
+  }
+  .action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .action-btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  .action-btn.primary:hover { background: var(--text); color: #000; border-color: var(--text); }
+  .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -693,6 +772,9 @@ __BASE_STYLE__
       <div class="progress-ring live" id="progress">
         <span class="status-dot"></span>
         <span id="progress-label">…</span>
+      </div>
+      <div class="top-actions" style="margin-top: 12px; justify-content: flex-end;">
+        <button class="action-btn primary" id="finalize-btn" onclick="finalize()">Finalize</button>
       </div>
     </div>
   </section>
@@ -738,18 +820,68 @@ function renderShots(shots) {
     let media = `<div class="placeholder skel">awaiting keyframe</div>`;
     if (s.clip_path) media = `<video src="/videos/${CALL_ID}/clips/${s.clip_path.split('/').pop()}?t=${cb}" controls muted loop preload="metadata"></video>`;
     else if (s.keyframe_path) media = `<img src="/videos/${CALL_ID}/keyframes/${s.keyframe_path.split('/').pop()}?t=${cb}">`;
-    return `<div class="shot">
+    const canRegen = ['done','failed','dirty'].includes(s.status);
+    const escPrompt = (s.prompt || '').replace(/"/g, '&quot;').replace(/</g,'&lt;');
+    const escNarr = (s.narration || '').replace(/"/g, '&quot;').replace(/</g,'&lt;');
+    return `<div class="shot" data-shot-id="${s.index}">
       <div class="media">
         ${media}
         <span class="pill ${s.status}"><span class="dot"></span>${s.status}</span>
         <span class="idx">Shot ${String(s.index + 1).padStart(2,'0')}</span>
+        ${canRegen ? `<div class="shot-actions">
+          <button class="shot-btn" onclick="openRegen(${s.index}, this)">↻ Redo</button>
+        </div>` : ''}
       </div>
       <div class="info">
         <div class="intent">${s.intent || ''}</div>
         ${s.narration ? `<div class="narr">${s.narration}</div>` : ''}
       </div>
+      <div class="regen-form" id="regen-${s.index}" style="display:none">
+        <div style="font-family: var(--mono); font-size: 10px; color: var(--text-3); letter-spacing: 0.14em; text-transform: uppercase;">Edit shot ${s.index + 1}</div>
+        <textarea id="rg-prompt-${s.index}" placeholder="Visual prompt" rows="5">${escPrompt}</textarea>
+        <textarea id="rg-narr-${s.index}" placeholder="Narration (optional)" rows="2">${escNarr}</textarea>
+        <div class="row">
+          <button class="btn" onclick="closeRegen(${s.index})">Cancel</button>
+          <button class="btn primary" onclick="submitRegen(${s.index})">Re-render</button>
+        </div>
+      </div>
     </div>`;
   }).join('');
+}
+
+function openRegen(idx, btn) {
+  document.getElementById('regen-' + idx).style.display = 'flex';
+}
+function closeRegen(idx) {
+  document.getElementById('regen-' + idx).style.display = 'none';
+}
+async function submitRegen(idx) {
+  const prompt = document.getElementById('rg-prompt-' + idx).value.trim();
+  const narr = document.getElementById('rg-narr-' + idx).value.trim();
+  if (!prompt) return alert('Prompt cannot be empty');
+  try {
+    const r = await fetch(`/api/regen/${CALL_ID}/${idx}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ new_prompt: prompt, new_narration: narr })
+    });
+    if (!r.ok) throw new Error('regen failed');
+    closeRegen(idx);
+    setTimeout(() => location.reload(), 400);
+  } catch(e) { alert(e.message); }
+}
+
+async function finalize() {
+  const btn = document.getElementById('finalize-btn');
+  btn.disabled = true; btn.textContent = 'Stitching…';
+  try {
+    const r = await fetch(`/api/finalize/${CALL_ID}`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'finalize failed');
+    const rs = await fetch('/api/session/' + CALL_ID);
+    if (rs.ok) apply(await rs.json());
+  } catch(e) { alert(e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Finalize'; }
 }
 
 function renderTranscript(tr) {
