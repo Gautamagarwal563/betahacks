@@ -53,6 +53,49 @@ def home():
     return INDEX_HTML
 
 
+@app.get("/how", response_class=HTMLResponse)
+def how():
+    return HOW_HTML
+
+
+@app.get("/api/agents")
+def api_agents():
+    """Aggregate metrics per agent role across all sessions."""
+    state_dir = Path("state")
+    agents = {
+        "you":          {"name": "You",              "role": "The director",         "model": "phone",                    "calls": 0, "unit": "calls"},
+        "vapi":         {"name": "Vapi + Deepgram",  "role": "Voice I/O",            "model": "nova-3 · aura",            "calls": 0, "unit": "turns"},
+        "director":     {"name": "Director",          "role": "Plans + iterates",    "model": "claude-sonnet-4-6",        "calls": 0, "unit": "decisions"},
+        "storyboard":   {"name": "Storyboard",        "role": "Keyframes",           "model": "seedream-5-0",             "calls": 0, "unit": "frames"},
+        "cinema":       {"name": "Cinematographer",  "role": "Motion",               "model": "seedance-2-0-fast",        "calls": 0, "unit": "clips"},
+        "voice":        {"name": "Voice",            "role": "Narration",            "model": "seed-speech",              "calls": 0, "unit": "tracks"},
+        "stitch":       {"name": "Stitcher",         "role": "Final assembly",      "model": "ffmpeg · remotion",         "calls": 0, "unit": "videos"},
+    }
+    live_count = 0
+    calls = 0
+    if state_dir.exists():
+        for p in state_dir.glob("*.json"):
+            try:
+                d = json.loads(p.read_text())
+            except Exception:
+                continue
+            calls += 1
+            shots = d.get("shots", [])
+            tr = d.get("transcript", [])
+            agents["you"]["calls"] += 1
+            agents["vapi"]["calls"] += len(tr)
+            agents["director"]["calls"] += sum(1 for t in tr if t.get("role") == "assistant") or 1
+            agents["storyboard"]["calls"] += sum(1 for s in shots if s.get("keyframe_path"))
+            agents["cinema"]["calls"] += sum(1 for s in shots if s.get("clip_path"))
+            if d.get("final_video_path"):
+                agents["voice"]["calls"] += 1
+                agents["stitch"]["calls"] += 1
+            # live = no final yet
+            if not d.get("final_video_path"):
+                live_count += 1
+    return {"agents": list(agents.values()), "calls_total": calls, "live": live_count}
+
+
 @app.get("/api/sessions")
 def api_sessions():
     state = Path("state")
@@ -204,6 +247,12 @@ _BASE_STYLE = """
     font-family: var(--mono); font-size: 11px; padding: 2px 6px; border-radius: 4px;
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
   }
+  .nav-chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-3); padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border); text-decoration: none;
+  }
+  .nav-chip:hover { color: var(--text); border-color: var(--border-2); text-decoration: none; }
 </style>
 """
 
@@ -326,7 +375,10 @@ __BASE_STYLE__
 <body>
 <nav class="topnav"><div class="inner">
   <a href="/" class="brand" style="text-decoration:none"><span class="glyph"></span>CONDUIT</a>
-  <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118 · live</a>
+  <div style="display:flex; gap: 12px; align-items: center;">
+    <a href="/how" class="nav-chip">How it works</a>
+    <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118 · live</a>
+  </div>
 </div></nav>
 
 <div class="wrap">
@@ -623,7 +675,10 @@ __BASE_STYLE__
 <body>
 <nav class="topnav"><div class="inner">
   <a href="/" class="brand" style="text-decoration:none"><span class="glyph"></span>CONDUIT</a>
-  <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118 · live</a>
+  <div style="display:flex; gap: 12px; align-items: center;">
+    <a href="/how" class="nav-chip">How it works</a>
+    <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118 · live</a>
+  </div>
 </div></nav>
 
 <div class="wrap">
@@ -776,9 +831,339 @@ es.addEventListener('snapshot', e => apply(JSON.parse(e.data)));
 </body></html>"""
 
 
-# Inject shared base style into both templates
+HOW_HTML = """<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Conduit — how it works</title>
+__BASE_STYLE__
+<style>
+  .hero-how {
+    padding: 72px 0 32px; text-align: center;
+  }
+  .hero-how h1 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(40px, 6vw, 72px); line-height: 1.02; letter-spacing: -0.02em;
+    margin: 0 0 16px; color: var(--text);
+  }
+  .hero-how h1 em { font-style: italic; color: var(--accent); }
+  .hero-how .lede {
+    font-size: 16px; color: var(--text-2); max-width: 560px; margin: 0 auto 0;
+  }
+
+  .stats-hero {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--border); border-radius: 14px; overflow: hidden;
+    margin: 48px 0 72px; border: 1px solid var(--border);
+  }
+  @media (max-width: 640px) { .stats-hero { grid-template-columns: repeat(2, 1fr); } }
+  .stats-hero .cell { background: var(--surface); padding: 26px 24px; text-align: center; }
+  .stats-hero .n { font-family: var(--serif); font-size: 44px; line-height: 1; letter-spacing: -0.02em; color: var(--text); }
+  .stats-hero .l { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); margin-top: 8px; }
+
+  /* the flow diagram */
+  .flow {
+    position: relative; padding: 40px 0 60px;
+  }
+  .flow-row {
+    display: flex; justify-content: center; gap: 28px; flex-wrap: wrap;
+    margin-bottom: 48px; position: relative;
+  }
+  .flow-row.fan {
+    justify-content: space-between; gap: 16px;
+  }
+  .connector {
+    width: 1px; height: 40px; background: linear-gradient(180deg, var(--accent) 0%, transparent 100%);
+    margin: -24px auto 0; opacity: 0.45;
+  }
+  .fan-connectors {
+    position: absolute; top: -40px; left: 50%; transform: translateX(-50%);
+    width: 80%; height: 40px; pointer-events: none;
+  }
+  .fan-connectors svg { width: 100%; height: 100%; }
+
+  .node {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px 20px;
+    min-width: 200px; max-width: 240px;
+    position: relative;
+    transition: all .3s ease;
+  }
+  .node:hover { border-color: var(--border-2); transform: translateY(-2px); }
+  .node.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 32px var(--accent-glow);
+  }
+  .node .row-1 {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+  }
+  .node .name {
+    font-family: var(--serif); font-size: 20px; letter-spacing: -0.01em; color: var(--text);
+  }
+  .node .status-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--text-3);
+    transition: all .3s ease;
+  }
+  .node.active .status-dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    animation: breathe 1.4s infinite;
+  }
+  .node .role {
+    font-size: 12px; color: var(--text-2); margin-bottom: 10px;
+  }
+  .node .model {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    background: rgba(103,232,249,0.08); padding: 3px 8px; border-radius: 6px;
+    display: inline-block; border: 1px solid rgba(103,232,249,0.18);
+  }
+  .node .count {
+    position: absolute; top: 14px; right: 16px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--text-3);
+    text-transform: uppercase;
+  }
+  .node .count strong { color: var(--text); font-weight: 500; }
+
+  .output-node {
+    background: linear-gradient(180deg, rgba(74,222,128,0.06) 0%, rgba(74,222,128,0.01) 100%);
+    border: 1px solid rgba(74,222,128,0.25);
+  }
+  .output-node .name { color: var(--success); }
+  .output-node .status-dot { background: var(--success); box-shadow: 0 0 0 3px rgba(74,222,128,0.2); }
+
+  .section-title {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--text-3); font-weight: 500; margin: 0 0 18px; text-align: center;
+  }
+
+  .why-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-top: 80px;
+  }
+  @media (max-width: 780px) { .why-grid { grid-template-columns: 1fr; } }
+  .why {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; transition: all .25s ease;
+  }
+  .why:hover { border-color: var(--border-2); }
+  .why h3 {
+    font-family: var(--serif); font-weight: 400; font-size: 22px; letter-spacing: -0.01em;
+    margin: 0 0 10px; color: var(--text);
+  }
+  .why p { color: var(--text-2); font-size: 14px; line-height: 1.55; margin: 0; }
+  .why .n {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; color: var(--accent);
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+
+  .phone-strip {
+    margin: 80px 0 40px; padding: 48px 32px; border-radius: 18px;
+    background: linear-gradient(180deg, rgba(103,232,249,0.05) 0%, rgba(103,232,249,0.01) 100%);
+    border: 1px solid rgba(103,232,249,0.18);
+    text-align: center;
+  }
+  .phone-strip h2 {
+    font-family: var(--serif); font-weight: 400; font-size: 36px; margin: 0 0 8px; letter-spacing: -0.01em;
+  }
+  .phone-strip h2 em { color: var(--accent); font-style: italic; }
+  .phone-strip .big-cta {
+    margin-top: 24px; display: inline-flex; gap: 10px; align-items: center;
+    font-family: var(--mono); font-size: 22px; color: var(--text);
+    padding: 16px 28px; border-radius: 14px;
+    background: var(--bg); border: 1px solid rgba(103,232,249,0.35);
+    box-shadow: 0 0 40px rgba(103,232,249,0.1);
+    transition: all .2s ease;
+  }
+  .phone-strip .big-cta:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-1px); }
+
+  .nav-chips { display: flex; gap: 14px; justify-content: center; margin-top: 16px; }
+  .nav-chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-3); padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .nav-chip:hover { color: var(--text); border-color: var(--border-2); text-decoration: none; }
+</style>
+</head>
+<body>
+<nav class="topnav"><div class="inner">
+  <a href="/" class="brand" style="text-decoration:none"><span class="glyph"></span>CONDUIT</a>
+  <div style="display:flex; gap: 12px; align-items: center;">
+    <a href="/how" class="nav-chip" style="color: var(--text); border-color: var(--accent);">How it works</a>
+    <a href="/" class="nav-chip">Calls</a>
+    <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118</a>
+  </div>
+</div></nav>
+
+<div class="wrap">
+  <section class="hero-how">
+    <h1>Seven agents.<br>One <em>phone call</em>.</h1>
+    <p class="lede">You direct. They collaborate. Every video on this platform is produced by a multi-agent pipeline where each role uses a purpose-built model — and you can interrupt any of them.</p>
+  </section>
+
+  <section>
+    <div class="stats-hero">
+      <div class="cell"><div class="n" id="s-calls">—</div><div class="l">Calls directed</div></div>
+      <div class="cell"><div class="n" id="s-frames">—</div><div class="l">Keyframes rendered</div></div>
+      <div class="cell"><div class="n" id="s-clips">—</div><div class="l">Clips generated</div></div>
+      <div class="cell"><div class="n" id="s-live">—</div><div class="l">Live now</div></div>
+    </div>
+  </section>
+
+  <section class="flow" id="flow">
+    <div class="section-title">The orchestration</div>
+
+    <div class="flow-row">
+      <div class="node" id="n-you">
+        <div class="row-1"><div class="name">You</div><span class="status-dot"></span></div>
+        <div class="role">The director — on a phone call</div>
+        <div class="model">phone</div>
+        <div class="count"><strong id="c-you">0</strong> calls</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="flow-row">
+      <div class="node" id="n-vapi">
+        <div class="row-1"><div class="name">Vapi + Deepgram</div><span class="status-dot"></span></div>
+        <div class="role">Voice I/O — streams your words, speaks the reply</div>
+        <div class="model">nova-3 · aura</div>
+        <div class="count"><strong id="c-vapi">0</strong> turns</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="flow-row">
+      <div class="node" id="n-director">
+        <div class="row-1"><div class="name">Director</div><span class="status-dot"></span></div>
+        <div class="role">Plans shots, re-cuts on your redirect, calls the crew</div>
+        <div class="model">claude-sonnet-4-6</div>
+        <div class="count"><strong id="c-director">0</strong> decisions</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="flow-row fan">
+      <div class="node" id="n-storyboard">
+        <div class="row-1"><div class="name">Storyboard</div><span class="status-dot"></span></div>
+        <div class="role">Keyframe per shot — locks visual style</div>
+        <div class="model">seedream-5-0</div>
+        <div class="count"><strong id="c-storyboard">0</strong> frames</div>
+      </div>
+      <div class="node" id="n-cinema">
+        <div class="row-1"><div class="name">Cinematographer</div><span class="status-dot"></span></div>
+        <div class="role">Animates keyframes into motion via image-to-video</div>
+        <div class="model">seedance-2-0</div>
+        <div class="count"><strong id="c-cinema">0</strong> clips</div>
+      </div>
+      <div class="node" id="n-voice">
+        <div class="row-1"><div class="name">Voice</div><span class="status-dot"></span></div>
+        <div class="role">Synthesizes the narration bed</div>
+        <div class="model">seed-speech</div>
+        <div class="count"><strong id="c-voice">0</strong> tracks</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="flow-row">
+      <div class="node" id="n-stitch">
+        <div class="row-1"><div class="name">Stitcher</div><span class="status-dot"></span></div>
+        <div class="role">Title card + crossfades + captions + outro</div>
+        <div class="model">ffmpeg · remotion</div>
+        <div class="count"><strong id="c-stitch">0</strong> renders</div>
+      </div>
+    </div>
+    <div class="connector"></div>
+
+    <div class="flow-row">
+      <div class="node output-node">
+        <div class="row-1"><div class="name">Finished video</div><span class="status-dot"></span></div>
+        <div class="role">MP4 · 1080p · 16:9 · ready to post</div>
+        <div class="model">mp4</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="why-grid">
+      <div class="why">
+        <div class="n">01</div>
+        <h3>Conversation → video.</h3>
+        <p>Every other tool is prompt-to-video. Conduit is a live director you iterate with. Redirect any shot mid-render, the rest preserves.</p>
+      </div>
+      <div class="why">
+        <div class="n">02</div>
+        <h3>Purpose-built models.</h3>
+        <p>No single model does planning + image + motion + speech well. We orchestrate BytePlus's Seed family, each picked for its strength.</p>
+      </div>
+      <div class="why">
+        <div class="n">03</div>
+        <h3>Partial regeneration.</h3>
+        <p>"Redo shot 3 — make the car red." Only that shot re-renders. The others stay. 60% cheaper iteration than start-over pipelines.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="phone-strip">
+    <h2>Call it. <em>Direct it.</em></h2>
+    <div style="color: var(--text-2); font-size: 15px; max-width: 460px; margin: 0 auto;">
+      Seven specialized agents on the other end of the line. No signup, no UI to learn. Talk like you're calling a real production crew.
+    </div>
+    <a class="big-cta" href="tel:+14434648118">📞 +1 (443) 464-8118</a>
+  </section>
+</div>
+
+<script>
+async function refresh() {
+  try {
+    const r = await fetch('/api/agents');
+    const d = await r.json();
+    const map = Object.fromEntries(d.agents.map(a => [a.name.toLowerCase().split(' ')[0], a]));
+    const keys = {you:'you', vapi:'vapi', director:'director', storyboard:'storyboard',
+                  cinema:'cinematographer', voice:'voice', stitch:'stitcher'};
+    for (const [short, full] of Object.entries(keys)) {
+      const agent = d.agents.find(a => a.name.toLowerCase().includes(full));
+      if (agent) {
+        const el = document.getElementById('c-' + short);
+        if (el) el.textContent = agent.calls;
+      }
+    }
+    // hero stats
+    const frames = (d.agents.find(a => a.name === 'Storyboard') || {}).calls || 0;
+    const clips = (d.agents.find(a => a.name === 'Cinematographer') || {}).calls || 0;
+    document.getElementById('s-calls').textContent = d.calls_total;
+    document.getElementById('s-frames').textContent = frames;
+    document.getElementById('s-clips').textContent = clips;
+    document.getElementById('s-live').textContent = d.live;
+
+    // Live animation — activate nodes based on whether there's an ongoing call
+    const liveSessions = d.live;
+    const nodes = ['n-vapi','n-director','n-storyboard','n-cinema','n-voice','n-stitch'];
+    if (liveSessions > 0) {
+      // Sequentially pulse each node as if a call is flowing through
+      const now = (Date.now() / 1200) % nodes.length;
+      nodes.forEach((nid, i) => {
+        const n = document.getElementById(nid);
+        if (!n) return;
+        if (Math.floor(now) === i) n.classList.add('active');
+        else n.classList.remove('active');
+      });
+    } else {
+      nodes.forEach(nid => document.getElementById(nid)?.classList.remove('active'));
+    }
+  } catch(e) { console.error(e); }
+}
+refresh();
+setInterval(refresh, 1200);
+</script>
+</body></html>"""
+
+
+# Inject shared base style into all templates
 INDEX_HTML = INDEX_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
 CALL_HTML = CALL_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
+HOW_HTML = HOW_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
 
 
 if __name__ == "__main__":

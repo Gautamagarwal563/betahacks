@@ -182,6 +182,162 @@ def wait_all(session: Session, timeout: float = 300) -> None:
         time.sleep(0.5)
 
 
+# ---------- title + outro cards (Pillow-based, works on minimal ffmpeg) ----------
+
+def _find_serif_font() -> str:
+    candidates = [
+        "/System/Library/Fonts/Supplemental/Baskerville.ttc",
+        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+        "/System/Library/Fonts/Times.ttc",
+        "/Library/Fonts/Georgia.ttf",
+        "/System/Library/Fonts/Supplemental/Georgia.ttf",
+    ]
+    for p in candidates:
+        if Path(p).exists():
+            return p
+    return ""
+
+
+def _find_mono_font() -> str:
+    candidates = [
+        "/System/Library/Fonts/Menlo.ttc",
+        "/System/Library/Fonts/Monaco.ttf",
+        "/System/Library/Fonts/Courier New.ttf",
+    ]
+    for p in candidates:
+        if Path(p).exists():
+            return p
+    return ""
+
+
+def _render_card_png(title: str, subtitle: str, out: Path,
+                     size: tuple = (1920, 1080)) -> Path:
+    """Render a cinematic title/outro card to PNG via Pillow."""
+    from PIL import Image, ImageDraw, ImageFont
+    W, H = size
+    img = Image.new("RGB", (W, H), (5, 5, 5))
+    draw = ImageDraw.Draw(img)
+
+    serif_path = _find_serif_font()
+    mono_path = _find_mono_font()
+    try:
+        title_font = ImageFont.truetype(serif_path, 110) if serif_path else ImageFont.load_default()
+    except Exception:
+        title_font = ImageFont.load_default()
+    try:
+        sub_font = ImageFont.truetype(mono_path, 26) if mono_path else ImageFont.load_default()
+    except Exception:
+        sub_font = ImageFont.load_default()
+
+    # subtle radial warmth via gradient: fake with concentric rectangles
+    for i in range(60):
+        alpha = int(8 * (1 - i / 60))
+        if alpha <= 0: break
+        draw.rectangle([i, i, W - i, H - i], outline=(20, 20, 25, alpha))
+
+    # title (wrap at ~24 chars per line)
+    words = title.split()
+    lines = []
+    cur = ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        bbox = draw.textbbox((0, 0), test, font=title_font)
+        if bbox[2] > W * 0.8 and cur:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = test
+    if cur:
+        lines.append(cur)
+    text = "\n".join(lines[:3])
+    # compute bounding box using textbbox for multiline
+    try:
+        bbox = draw.multiline_textbbox((0, 0), text, font=title_font, spacing=10, align="center")
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+    except Exception:
+        tw, th = W // 2, 100
+    draw.multiline_text(((W - tw) // 2, (H - th) // 2 - 40), text,
+                        font=title_font, fill=(244, 244, 245), spacing=10, align="center")
+
+    # subtitle (cyan mono, below)
+    if subtitle:
+        bbox = draw.textbbox((0, 0), subtitle, font=sub_font)
+        sw = bbox[2] - bbox[0]
+        draw.text(((W - sw) // 2, (H + th) // 2 + 24), subtitle,
+                  font=sub_font, fill=(103, 232, 249))
+
+    # thin accent line above subtitle
+    line_y = (H + th) // 2 + 12
+    draw.line([(W // 2 - 60, line_y), (W // 2 + 60, line_y)], fill=(103, 232, 249), width=1)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out, "PNG")
+    return out
+
+
+def _make_card(text: str, subtitle: str, out: Path, dur: float = 2.0,
+               variant: str = "intro") -> Path:
+    """PNG card → mp4 via ffmpeg -loop (no drawtext needed)."""
+    png = out.with_suffix(".png")
+    _render_card_png(text, subtitle, png)
+    subprocess.run([
+        "ffmpeg", "-y", "-loop", "1", "-i", str(png),
+        "-t", f"{dur}", "-r", "30",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+        "-vf", "scale=1920:1080",
+        str(out),
+    ], check=True, capture_output=True)
+    return out
+
+
+def _render_caption_png(text: str, out: Path,
+                        size: tuple = (1920, 160)) -> Path:
+    """Render a lower-third caption to PNG with alpha."""
+    from PIL import Image, ImageDraw, ImageFont
+    W, H = size
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    # dark translucent bar
+    draw.rectangle([0, 0, W, H], fill=(0, 0, 0, 140))
+    serif = _find_serif_font()
+    try:
+        font = ImageFont.truetype(serif, 38) if serif else ImageFont.load_default()
+    except Exception:
+        font = ImageFont.load_default()
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text(((W - tw) // 2, (H - th) // 2 - 4), text, font=font, fill=(255, 255, 255, 255))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out, "PNG")
+    return out
+
+
+def _make_caption_clip(src: Path, caption: str, out: Path) -> Path:
+    """Overlay a Pillow-rendered caption PNG onto the source clip."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if not caption.strip():
+        subprocess.run([
+            "ffmpeg", "-y", "-i", str(src),
+            "-map", "0:v:0",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-r", "30", "-vf", "scale=1920:1080",
+            str(out),
+        ], check=True, capture_output=True)
+        return out
+    png = out.with_suffix(".png")
+    _render_caption_png(caption, png)
+    # scale video to 1920x1080, then overlay caption PNG at y = H-160
+    subprocess.run([
+        "ffmpeg", "-y", "-i", str(src), "-i", str(png),
+        "-filter_complex", "[0:v]scale=1920:1080[v];[v][1:v]overlay=0:main_h-160:format=auto",
+        "-map", "0:v:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+        "-pix_fmt", "yuv420p", "-r", "30",
+        str(out),
+    ], check=True, capture_output=True)
+    return out
+
+
 # ---------- narration + stitch ----------
 
 def render_narration(session: Session, out_dir: Path) -> Optional[Path]:
@@ -199,8 +355,14 @@ def render_narration(session: Session, out_dir: Path) -> Optional[Path]:
     return mp3
 
 
+ENABLE_CARDS = os.getenv("ENABLE_CARDS", "true").lower() == "true"
+ENABLE_CAPTIONS = os.getenv("ENABLE_CAPTIONS", "true").lower() == "true"
+
+
 def finalize(session: Session) -> Path:
-    """Wait for all shots, stitch, produce final.mp4."""
+    """Wait for all shots, stitch, produce final.mp4.
+    Adds intro card, burned captions, and outro card for a polished ad feel.
+    """
     wait_all(session)
     run_dir = VIDEOS_DIR / session.call_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -213,13 +375,51 @@ def finalize(session: Session) -> Path:
     if not ordered:
         raise RuntimeError("no shots rendered — cannot finalize")
 
+    # Re-encode each clip with caption burned in (if captions enabled)
+    processed_clips: list[Path] = []
+    processed_dir = run_dir / "_processed"
+    processed_dir.mkdir(exist_ok=True)
+    for s in ordered:
+        src = Path(s.clip_path)
+        dst = processed_dir / src.name
+        if ENABLE_CAPTIONS and s.narration.strip():
+            _make_caption_clip(src, s.narration.strip(), dst)
+        else:
+            # re-encode with consistent params so concat works cleanly
+            subprocess.run([
+                "ffmpeg", "-y", "-i", str(src),
+                "-map", "0:v:0",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-r", "30",
+                str(dst),
+            ], check=True, capture_output=True)
+        processed_clips.append(dst)
+
+    # Intro + outro cards
+    concat_items: list[Path] = []
+    if ENABLE_CARDS:
+        intro = run_dir / "_intro.mp4"
+        outro = run_dir / "_outro.mp4"
+        title = (session.title or "Untitled").upper()
+        _make_card(title, "DIRECTED BY CONDUIT", intro, dur=1.8, variant="intro")
+        _make_card("CONDUIT", "+1 (443) 464-8118", outro, dur=2.0, variant="outro")
+        concat_items.append(intro)
+    concat_items.extend(processed_clips)
+    if ENABLE_CARDS:
+        concat_items.append(outro)
+
+    # Re-encode all to same codec params (concat demuxer requires identical streams;
+    # caption re-encode already normalized the clips, so we do full re-encode here to be safe)
     clips_txt = run_dir / "clips.txt"
-    clips_txt.write_text("\n".join(f"file '{Path(s.clip_path).resolve()}'" for s in ordered))
+    clips_txt.write_text("\n".join(f"file '{p.resolve()}'" for p in concat_items))
 
     silent = run_dir / "silent.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(clips_txt),
-        "-c", "copy", str(silent),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-pix_fmt", "yuv420p", "-r", "30",
+        "-an",  # silent — narration muxed in next step
+        str(silent),
     ], check=True, capture_output=True)
 
     narration = render_narration(session, run_dir)
