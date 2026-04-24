@@ -128,15 +128,15 @@ ASSISTANT_BODY = {
     "firstMessage": "Hey — Conduit here. I'm your AI director. What are we making?",
     "model": {
         "provider": "anthropic",
-        "model": "claude-sonnet-4-5",
-        "systemPrompt": SYSTEM_PROMPT,
+        "model": "claude-sonnet-4-6",
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}],
         "tools": TOOLS,
         "temperature": 0.6,
         "maxTokens": 800
     },
     "voice": {
-        "provider": "11labs",
-        "voiceId": "rachel"   # calm-pro default; override in dashboard if needed
+        "provider": "deepgram",
+        "voiceId": "asteria"   # pro female US voice; deepgram aura
     },
     "transcriber": {
         "provider": "deepgram",
@@ -157,7 +157,13 @@ def _headers() -> dict:
 
 def create() -> str:
     r = httpx.post(f"{BASE}/assistant", headers=_headers(), json=ASSISTANT_BODY, timeout=30)
-    r.raise_for_status()
+    if r.status_code >= 400:
+        print(f"HTTP {r.status_code}")
+        try:
+            print(json.dumps(r.json(), indent=2)[:2000])
+        except Exception:
+            print(r.text[:2000])
+        r.raise_for_status()
     aid = r.json()["id"]
     print(f"created assistant {aid}")
     print(f"next: python vapi_setup.py assign {aid}")
