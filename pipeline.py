@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import byteplus
+import fal_client
 import director as _director
 from director import Session, Shot, ShotStatus
 
@@ -97,6 +98,20 @@ def _seedance_clip(shot: Shot, out_dir: Path) -> Path:
     return out
 
 
+def _fal_clip(shot: Shot, out_dir: Path) -> Path:
+    """Real Seedance 2.0 via fal.ai gateway (paid, US-accessible)."""
+    dur = max(5, int(round(shot.duration)))
+    res = fal_client.generate_video(
+        prompt=shot.prompt,
+        image_url=shot.keyframe_url,
+        duration=dur,
+        resolution="720p",
+    )
+    out = out_dir / f"clip_{shot.index:02d}.mp4"
+    fal_client.download(res.url, out)
+    return out
+
+
 def render_clip(session: Session, shot: Shot) -> None:
     if not shot.keyframe_path:
         render_keyframe(session, shot)
@@ -105,7 +120,11 @@ def render_clip(session: Session, shot: Shot) -> None:
     emit("shot.status", {"call_id": session.call_id, "shot_id": shot.id, "status": shot.status.value})
     out_dir = VIDEOS_DIR / session.call_id / "clips"
     out_dir.mkdir(parents=True, exist_ok=True)
-    renderer = _seedance_clip if CLIP_MODE == "seedance" else _kenburns_clip
+    renderer = {
+        "seedance": _seedance_clip,
+        "fal": _fal_clip,
+        "kenburns": _kenburns_clip,
+    }.get(CLIP_MODE, _kenburns_clip)
     try:
         path = renderer(shot, out_dir)
         shot.clip_path = str(path)
