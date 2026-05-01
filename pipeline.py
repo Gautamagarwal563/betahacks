@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 from typing import Callable, Optional
 
+import httpx
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -142,6 +143,7 @@ def render_clip(session: Session, shot: Shot) -> None:
             "kenburns": _kenburns_clip,
         }.get(effective_mode, _fal_clip)
         path = renderer(shot, out_dir)
+        path = _bake_shot_audio(shot, path)  # Aura VO + silent fallback
         shot.clip_path = str(path)
         shot.status = ShotStatus.DONE
     except Exception as e:
@@ -283,8 +285,10 @@ def _make_card(text: str, subtitle: str, out: Path, dur: float = 2.0,
     _render_card_png(text, subtitle, png)
     subprocess.run([
         "ffmpeg", "-y", "-loop", "1", "-i", str(png),
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
         "-t", f"{dur}", "-r", "30",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+        "-c:a", "aac", "-b:a", "192k", "-shortest",
         "-vf", "scale=1920:1080",
         str(out),
     ], check=True, capture_output=True)
@@ -314,24 +318,29 @@ def _render_caption_png(text: str, out: Path,
 
 
 def _make_caption_clip(src: Path, caption: str, out: Path) -> Path:
-    """Overlay a Pillow-rendered caption PNG onto the source clip."""
+    """Overlay a Pillow-rendered caption PNG and apply the cinematic grade.
+    Preserves the per-shot audio track baked in earlier."""
     out.parent.mkdir(parents=True, exist_ok=True)
     if not caption.strip():
         subprocess.run([
             "ffmpeg", "-y", "-i", str(src),
-            "-map", "0:v:0",
+            "-map", "0:v:0", "-map", "0:a?",
+            "-vf", GRADE_VF,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-pix_fmt", "yuv420p", "-r", "30", "-vf", "scale=1920:1080",
+            "-c:a", "aac", "-b:a", "192k",
+            "-pix_fmt", "yuv420p", "-r", "30",
             str(out),
         ], check=True, capture_output=True)
         return out
     png = out.with_suffix(".png")
     _render_caption_png(caption, png)
-    # scale video to 1920x1080, then overlay caption PNG at y = H-160
     subprocess.run([
         "ffmpeg", "-y", "-i", str(src), "-i", str(png),
-        "-filter_complex", "[0:v]scale=1920:1080[v];[v][1:v]overlay=0:main_h-160:format=auto",
-        "-map", "0:v:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+        "-filter_complex",
+            f"[0:v]{GRADE_VF}[v];[v][1:v]overlay=0:main_h-160:format=auto",
+        "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+        "-c:a", "aac", "-b:a", "192k",
         "-pix_fmt", "yuv420p", "-r", "30",
         str(out),
     ], check=True, capture_output=True)
@@ -340,14 +349,107 @@ def _make_caption_clip(src: Path, caption: str, out: Path) -> Path:
 
 # ---------- narration + stitch ----------
 
+def _ensure_silent_audio(clip_path: Path) -> Path:
+    """If the clip has no audio track, add a silent AAC one. Concat needs uniform streams."""
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a",
+         "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(clip_path)],
+        capture_output=True, text=True, check=False,
+    )
+    if probe.stdout.strip():
+        return clip_path
+    out = clip_path.with_name(clip_path.stem + "_va.mp4")
+    subprocess.run([
+        "ffmpeg", "-y", "-i", str(clip_path),
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+        str(out),
+    ], check=True, capture_output=True)
+    return out
+
+
+def _bake_shot_audio(shot: Shot, clip_path: Path) -> Path:
+    """Generate Aura TTS for shot.narration and mux onto the clip, padded to clip length.
+    No narration → just guarantee a silent audio track so concat works."""
+    if not shot.narration.strip():
+        return _ensure_silent_audio(clip_path)
+    dg_key = os.getenv("DEEPGRAM_API_KEY", "")
+    if not dg_key:
+        return _ensure_silent_audio(clip_path)
+    voice = os.getenv("DEEPGRAM_TTS_VOICE", "aura-asteria-en")
+    out_dir = clip_path.parent
+    mp3 = out_dir / f"narration_{shot.index:02d}.mp3"
+    try:
+        r = httpx.post(
+            f"https://api.deepgram.com/v1/speak?model={voice}",
+            headers={"Authorization": f"Token {dg_key}",
+                     "Content-Type": "application/json"},
+            json={"text": shot.narration.strip()},
+            timeout=30,
+        )
+        r.raise_for_status()
+        mp3.write_bytes(r.content)
+    except Exception as e:
+        print(f"  [shot {shot.index}] aura tts failed: {e!r} — silent fallback")
+        return _ensure_silent_audio(clip_path)
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(clip_path)],
+        capture_output=True, text=True, check=True,
+    )
+    try:
+        clip_dur = float(probe.stdout.strip())
+    except ValueError:
+        clip_dur = float(shot.duration or 5)
+
+    out = out_dir / f"clip_{shot.index:02d}_va.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-i", str(clip_path), "-i", str(mp3),
+        "-filter_complex",
+            f"[1:a]apad,atrim=0:{clip_dur:.3f},asetpts=N/SR/TB[a]",
+        "-map", "0:v:0", "-map", "[a]",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        str(out),
+    ], check=True, capture_output=True)
+    return out
+
+
+# Cinematic teal-orange grade applied per-shot at the caption-clip stage.
+GRADE_VF = (
+    "scale=1920:1080,"
+    "curves=r='0/0 0.5/0.55 1/1':b='0/0 0.5/0.45 1/1',"
+    "eq=saturation=1.10:contrast=1.06,"
+    "unsharp=lx=3:ly=3:la=0.25"
+)
+
+
 def render_narration(session: Session, out_dir: Path) -> Optional[Path]:
     lines = [s.narration.strip() for s in session.shots if s.narration.strip()]
     if not lines:
         return None
     text = "  ".join(lines)
-    aiff = out_dir / "narration.aiff"
-    mp3 = out_dir / "narration.mp3"
     out_dir.mkdir(parents=True, exist_ok=True)
+    mp3 = out_dir / "narration.mp3"
+
+    dg_key = os.getenv("DEEPGRAM_API_KEY", "")
+    voice = os.getenv("DEEPGRAM_TTS_VOICE", "aura-asteria-en")
+    if dg_key:
+        try:
+            r = httpx.post(
+                f"https://api.deepgram.com/v1/speak?model={voice}",
+                headers={"Authorization": f"Token {dg_key}",
+                         "Content-Type": "application/json"},
+                json={"text": text},
+                timeout=60,
+            )
+            r.raise_for_status()
+            mp3.write_bytes(r.content)
+            return mp3
+        except Exception as e:
+            print(f"[narration] deepgram tts failed: {e!r} — falling back to macOS say")
+
+    aiff = out_dir / "narration.aiff"
     subprocess.run(["say", "-v", "Daniel", "-r", "170", "-o", str(aiff), text], check=True)
     subprocess.run(["ffmpeg", "-y", "-i", str(aiff), "-b:a", "192k", str(mp3)],
                    check=True, capture_output=True)
@@ -375,11 +477,13 @@ def finalize(session: Session) -> Path:
     if not ordered:
         raise RuntimeError("no shots rendered — cannot finalize")
 
+    emit("stitch.start", {"call_id": session.call_id, "total": len(ordered)})
     # Re-encode each clip with caption burned in (if captions enabled)
     processed_clips: list[Path] = []
     processed_dir = run_dir / "_processed"
     processed_dir.mkdir(exist_ok=True)
     for s in ordered:
+        emit("stitch.progress", {"call_id": session.call_id, "shot_index": s.index, "total": len(ordered)})
         src = Path(s.clip_path)
         dst = processed_dir / src.name
         if ENABLE_CAPTIONS and s.narration.strip():
@@ -413,31 +517,16 @@ def finalize(session: Session) -> Path:
     clips_txt = run_dir / "clips.txt"
     clips_txt.write_text("\n".join(f"file '{p.resolve()}'" for p in concat_items))
 
-    silent = run_dir / "silent.mp4"
+    # Each input already carries audio (per-shot Aura VO baked in during render,
+    # silent track on cards/un-narrated shots). Concat preserves audio cleanly.
+    final = run_dir / "final.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(clips_txt),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p", "-r", "30",
-        "-an",  # silent — narration muxed in next step
-        str(silent),
+        "-c:a", "aac", "-b:a", "192k",
+        str(final),
     ], check=True, capture_output=True)
-
-    narration = render_narration(session, run_dir)
-    final = run_dir / "final.mp4"
-    if narration:
-        # Pad narration audio with silence; use video length as the truth (not planned
-        # shot.duration, which may differ from actual clip length due to model minimums).
-        subprocess.run([
-            "ffmpeg", "-y", "-i", str(silent), "-i", str(narration),
-            "-filter_complex", "[1:a]apad[aud]",
-            "-map", "0:v:0", "-map", "[aud]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-            "-shortest",  # shortest applies to [aud] (now padded to infinity) vs video,
-                          # so output = exactly video length. Safe because apad makes audio infinite.
-            str(final),
-        ], check=True, capture_output=True)
-    else:
-        final = silent.rename(final)
 
     session.final_video_path = str(final)
     emit("session.finalized", {"call_id": session.call_id, "path": str(final)})

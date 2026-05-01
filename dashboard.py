@@ -23,11 +23,18 @@ from sse_starlette.sse import EventSourceResponse
 
 import director
 import pipeline
+import db
+import claude_client
 
 app = FastAPI(title="Conduit Dashboard")
 
+from fastapi.templating import Jinja2Templates
+_templates = Jinja2Templates(directory="templates")
+
 if Path("videos").exists():
     app.mount("/videos", StaticFiles(directory="videos"), name="videos")
+if Path("static").exists():
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # In-memory event queue per call_id (SSE subscribers)
@@ -56,6 +63,18 @@ def home():
 @app.get("/how", response_class=HTMLResponse)
 def how():
     return HOW_HTML
+
+
+@app.get("/demo", response_class=HTMLResponse)
+def demo():
+    return HTMLResponse(
+        DEMO_HTML,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/agents")
@@ -291,6 +310,24 @@ _BASE_STYLE = """
     border: 1px solid var(--border); text-decoration: none;
   }
   .nav-chip:hover { color: var(--text); border-color: var(--border-2); text-decoration: none; }
+
+  /* Brand logo (used in topnav across all pages) */
+  .brand-logo {
+    height: 36px; width: auto; display: block;
+    filter: drop-shadow(0 0 12px rgba(236, 72, 153, 0.35));
+    transition: filter .3s ease, transform .3s ease;
+  }
+  .brand-logo:hover {
+    filter: drop-shadow(0 0 22px rgba(236, 72, 153, 0.6));
+    transform: scale(1.04);
+  }
+  .brand-row { display: flex; align-items: center; gap: 14px; }
+  .brand-row .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18), 0 0 14px rgba(74, 222, 128, 0.5);
+    animation: breathe 1.8s ease-in-out infinite;
+  }
 </style>
 """
 
@@ -332,6 +369,93 @@ __BASE_STYLE__
   }
   .hero .quick {
     color: var(--text-3); font-size: 13px; font-family: var(--mono);
+  }
+
+  .demo-hero {
+    padding: 40px 0 8px;
+  }
+  .demo-hero .label-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .demo-hero .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--text-3);
+    display: inline-flex; align-items: center; gap: 10px;
+  }
+  .demo-hero .eyebrow::before {
+    content:''; width: 22px; height: 1px; background: var(--text-3);
+  }
+  .demo-hero .runtime {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--text-3);
+  }
+  .demo-hero .frame {
+    position: relative; border-radius: 18px; overflow: hidden;
+    border: 1px solid var(--border-2);
+    background: #000;
+    box-shadow:
+      0 0 0 1px rgba(103,232,249,0.05),
+      0 30px 80px -20px rgba(0,0,0,0.7),
+      0 0 120px -40px rgba(103,232,249,0.18);
+  }
+  .demo-hero .frame video {
+    display: block; width: 100%; height: auto; aspect-ratio: 16/9;
+    background: #000;
+  }
+  .demo-hero .frame .corner-tag {
+    position: absolute; top: 14px; left: 14px;
+    background: rgba(6,6,6,0.72); backdrop-filter: blur(8px);
+    border: 1px solid var(--border-2);
+    padding: 5px 11px; border-radius: 999px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--text-2);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .demo-hero .frame .corner-tag::before {
+    content:''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  /* Prompt → result panel above the hero video */
+  .prompt-panel {
+    margin: 0 0 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .prompt-panel .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 18px; border-bottom: 1px solid var(--border);
+    background: rgba(103,232,249,0.03);
+  }
+  .prompt-panel .role {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--accent);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .prompt-panel .role::before {
+    content:''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+  }
+  .prompt-panel .meta {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .prompt-panel .body {
+    padding: 18px 22px;
+    font-family: var(--serif); font-style: italic;
+    font-size: 22px; line-height: 1.45;
+    color: var(--text);
+  }
+  .prompt-panel .body em { color: var(--accent); font-style: normal; }
+  .prompt-panel .arrow {
+    text-align: center; padding: 6px 0 4px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.32em;
+    color: var(--text-3); border-top: 1px solid var(--border);
   }
 
   .section { padding: 48px 0 0; }
@@ -408,6 +532,215 @@ __BASE_STYLE__
   }
   .stat .n { font-family: var(--serif); font-size: 32px; line-height: 1; letter-spacing: -0.02em; }
   .stat .l { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); margin-top: 6px; }
+
+  .section-head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+    margin-bottom: 18px;
+  }
+  .section-head h2 { margin: 0; }
+  .live-badge {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--text-3);
+    border: 1px solid var(--border); padding: 4px 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .live-badge::before {
+    content:''; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3);
+  }
+  .live-badge.on { color: var(--success); border-color: rgba(74,222,128,0.3); }
+  .live-badge.on::before { background: var(--success); animation: breathe 1.4s infinite; }
+
+  .agents-strip {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
+  }
+  @media (max-width: 980px) { .agents-strip { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 580px) { .agents-strip { grid-template-columns: repeat(2, 1fr); } }
+  .agent-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 14px; position: relative;
+    transition: all .25s ease;
+  }
+  .agent-card .dot {
+    position: absolute; top: 14px; right: 14px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--text-3);
+    transition: all .3s ease;
+  }
+  .agent-card.active { border-color: rgba(103,232,249,0.32); }
+  .agent-card.active .dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    animation: breathe 1.6s infinite;
+  }
+  .agent-card .role {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--text-3); margin-bottom: 6px;
+  }
+  .agent-card .name {
+    font-family: var(--serif); font-size: 19px; letter-spacing: -0.01em;
+    color: var(--text); margin-bottom: 8px;
+  }
+  .agent-card .model {
+    font-family: var(--mono); font-size: 10px; color: var(--accent);
+    background: rgba(103,232,249,0.07); border: 1px solid rgba(103,232,249,0.18);
+    padding: 2px 7px; border-radius: 5px; display: inline-block;
+  }
+
+  .try-row {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+  }
+  @media (max-width: 700px) { .try-row { grid-template-columns: 1fr; } }
+  .try-chip {
+    text-align: left; cursor: pointer; background: var(--surface);
+    border: 1px solid var(--border); color: var(--text);
+    padding: 16px 18px; border-radius: 12px; font-size: 14px;
+    font-family: var(--sans); display: flex; gap: 12px; align-items: flex-start;
+    transition: all .18s ease;
+  }
+  .try-chip:hover { border-color: var(--accent); background: rgba(103,232,249,0.04); transform: translateY(-1px); }
+  .try-chip .quote {
+    font-family: var(--serif); font-style: italic; color: var(--text-2);
+    flex: 1; line-height: 1.4;
+  }
+  .try-chip .tag {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--text-3);
+    border: 1px solid var(--border); padding: 3px 7px; border-radius: 5px;
+    flex-shrink: 0; align-self: center;
+  }
+  .try-hint {
+    margin-top: 14px; font-family: var(--mono); font-size: 12px;
+    color: var(--text-3); letter-spacing: 0.04em;
+  }
+
+  .why-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  }
+  @media (max-width: 880px) { .why-row { grid-template-columns: 1fr; } }
+  .why-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; transition: all .22s ease;
+  }
+  .why-card:hover { border-color: var(--border-2); }
+  .why-card .n {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+  }
+  .why-card h3 {
+    font-family: var(--serif); font-weight: 400; font-size: 22px;
+    line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 10px; color: var(--text);
+  }
+  .why-card p { color: var(--text-2); font-size: 13.5px; line-height: 1.55; margin: 0; }
+
+  .tech-strip {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .tech-pill {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+    color: var(--text-2); background: var(--surface);
+    border: 1px solid var(--border); padding: 7px 13px; border-radius: 999px;
+  }
+  .tech-pill strong { color: var(--text); font-weight: 500; }
+
+  .big-cta-section {
+    margin: 56px 0 24px; padding: 56px 32px; border-radius: 20px; text-align: center;
+    background: linear-gradient(180deg, rgba(103,232,249,0.06) 0%, rgba(103,232,249,0) 100%);
+    border: 1px solid rgba(103,232,249,0.18);
+  }
+  .big-cta-section h2 {
+    font-family: var(--serif); font-weight: 400; font-size: clamp(32px, 4vw, 48px);
+    letter-spacing: -0.02em; margin: 0 0 8px; text-transform: none; color: var(--text);
+  }
+  .big-cta-section h2 em { color: var(--accent); font-style: italic; }
+  .big-cta-section p { color: var(--text-2); font-size: 15px; margin: 0 0 24px; }
+  .big-cta-btn {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-family: var(--mono); font-size: 22px; letter-spacing: -0.01em; color: var(--text);
+    padding: 16px 26px; border-radius: 14px;
+    background: var(--bg); border: 1px solid rgba(103,232,249,0.35);
+    box-shadow: 0 0 40px rgba(103,232,249,0.12);
+    transition: all .2s ease;
+  }
+  .big-cta-btn:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
+  .big-cta-btn .pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+    animation: breathe 1.6s infinite;
+  }
+
+  .footer {
+    border-top: 1px solid var(--border); padding: 32px 0 56px;
+    color: var(--text-3); font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.06em; display: flex; justify-content: space-between;
+    flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  .footer a { color: var(--text-2); }
+
+  /* ── Brand logo in topnav ───────────────────────────────────────── */
+  .brand-logo {
+    height: 36px; width: auto; display: block;
+    filter: drop-shadow(0 0 12px rgba(236, 72, 153, 0.35));
+    transition: filter .3s ease, transform .3s ease;
+  }
+  .brand-logo:hover {
+    filter: drop-shadow(0 0 22px rgba(236, 72, 153, 0.55));
+    transform: scale(1.04);
+  }
+  .brand-row { display: flex; align-items: center; gap: 14px; }
+  .brand-row .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18), 0 0 14px rgba(74, 222, 128, 0.5);
+    animation: breathe 1.8s ease-in-out infinite;
+  }
+
+  /* ── Framer-style scroll reveal ─────────────────────────────────── */
+  .reveal {
+    opacity: 0; transform: translateY(28px);
+    transition:
+      opacity .85s cubic-bezier(0.16, 1, 0.3, 1),
+      transform .85s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: opacity, transform;
+  }
+  .reveal.in { opacity: 1; transform: translateY(0); }
+  .reveal.d-1 { transition-delay: 80ms; }
+  .reveal.d-2 { transition-delay: 160ms; }
+  .reveal.d-3 { transition-delay: 240ms; }
+  .reveal.d-4 { transition-delay: 320ms; }
+
+  .reveal-stagger > * {
+    opacity: 0; transform: translateY(20px);
+    transition: opacity .7s cubic-bezier(0.16, 1, 0.3, 1),
+                transform .7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal-stagger.in > *:nth-child(1) { transition-delay: 0ms; opacity: 1; transform: translateY(0); }
+  .reveal-stagger.in > *:nth-child(2) { transition-delay: 80ms; opacity: 1; transform: translateY(0); }
+  .reveal-stagger.in > *:nth-child(3) { transition-delay: 160ms; opacity: 1; transform: translateY(0); }
+  .reveal-stagger.in > *:nth-child(4) { transition-delay: 240ms; opacity: 1; transform: translateY(0); }
+  .reveal-stagger.in > *:nth-child(5) { transition-delay: 320ms; opacity: 1; transform: translateY(0); }
+  .reveal-stagger.in > *:nth-child(6) { transition-delay: 400ms; opacity: 1; transform: translateY(0); }
+  .reveal-stagger.in > *:nth-child(7) { transition-delay: 480ms; opacity: 1; transform: translateY(0); }
+
+  /* ── Mouse-follow ambient glow on hero ──────────────────────────── */
+  .hero-aura {
+    position: fixed; pointer-events: none; z-index: 0;
+    width: 600px; height: 600px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(103,232,249,0.12) 0%, transparent 60%);
+    transform: translate(-50%, -50%);
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    mix-blend-mode: screen;
+    opacity: 0;
+  }
+  .hero-aura.on { opacity: 1; }
+
+  /* ── Section rhythm — consistent vertical breathing room ────────── */
+  .section { padding: 72px 0 0; }
+  .section:first-of-type { padding-top: 56px; }
+
+  /* ── Hero frame: subtle parallax tilt ───────────────────────────── */
+  .demo-hero .frame {
+    transform-origin: center center;
+    transform-style: preserve-3d;
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 </style>
 </head>
 <body>
@@ -434,92 +767,208 @@ __BASE_STYLE__
     </div>
   </section>
 
+  <section class="demo-hero">
+    <div class="label-row">
+      <span class="eyebrow">Conduit, on a real prompt</span>
+      <span class="runtime">25 sec · ✶ edited by Conduit</span>
+    </div>
+    <div class="prompt-panel">
+      <div class="head">
+        <span class="role">YOU · on the phone</span>
+        <span class="meta">+1 (443) 464-8118</span>
+      </div>
+      <div class="body">
+        “Make me a thirty-second <em>Apple-style launch reel</em> for <em>iBottle</em> —
+        a smart water bottle that tracks how much you drink every day.
+        Multiple shots, full voice-over, beautiful animation.”
+      </div>
+      <div class="arrow">↓ &nbsp; CONDUIT DELIVERED</div>
+    </div>
+    <div class="frame">
+      <video id="hero-video" src="/videos/_demo/ibottle.mp4?v=2" autoplay muted loop playsinline preload="metadata"></video>
+      <div class="corner-tag">Edited by Conduit</div>
+      <button id="hero-unmute" type="button"
+              style="position:absolute; bottom:14px; right:14px;
+                     background:rgba(6,6,6,0.72); backdrop-filter: blur(8px);
+                     border:1px solid var(--border-2); color:var(--text);
+                     padding:7px 13px; border-radius:999px; cursor:pointer;
+                     font-family:var(--mono); font-size:11px; letter-spacing:0.16em;
+                     text-transform:uppercase; display:inline-flex; align-items:center; gap:8px;">
+        <span id="hero-unmute-icon">🔇</span><span id="hero-unmute-label">Tap for sound</span>
+      </button>
+    </div>
+  </section>
+
+  <script>
+    (function(){
+      const v = document.getElementById('hero-video');
+      const btn = document.getElementById('hero-unmute');
+      const icon = document.getElementById('hero-unmute-icon');
+      const lbl = document.getElementById('hero-unmute-label');
+      if (!v || !btn) return;
+      btn.addEventListener('click', () => {
+        v.muted = !v.muted;
+        if (!v.muted) { v.play(); icon.textContent='🔊'; lbl.textContent='Sound on'; }
+        else          { icon.textContent='🔇'; lbl.textContent='Tap for sound'; }
+      });
+    })();
+  </script>
+
   <section class="section">
-    <h2>Stats</h2>
-    <div class="stat-strip" id="stat-strip">
-      <div class="stat"><div class="n" id="stat-calls">—</div><div class="l">Calls placed</div></div>
-      <div class="stat"><div class="n" id="stat-shots">—</div><div class="l">Shots rendered</div></div>
-      <div class="stat"><div class="n" id="stat-finals">—</div><div class="l">Videos finalized</div></div>
-      <div class="stat"><div class="n" id="stat-live">—</div><div class="l">Live right now</div></div>
+    <div class="section-head">
+      <h2>The crew · live</h2>
+      <span class="live-badge" id="live-badge">Idle</span>
+    </div>
+    <div class="agents-strip" id="agents-strip">
+      <div class="agent-card"><span class="dot"></span>
+        <div class="role">Director</div><div class="name">Claude</div>
+        <span class="model">claude-sonnet-4-5</span>
+      </div>
+      <div class="agent-card"><span class="dot"></span>
+        <div class="role">Storyboard</div><div class="name">Seedream</div>
+        <span class="model">seedream-5.0</span>
+      </div>
+      <div class="agent-card"><span class="dot"></span>
+        <div class="role">Cinematographer</div><div class="name">Seedance</div>
+        <span class="model">seedance-2.0</span>
+      </div>
+      <div class="agent-card"><span class="dot"></span>
+        <div class="role">Voice</div><div class="name">Aura</div>
+        <span class="model">deepgram-aura</span>
+      </div>
+      <div class="agent-card"><span class="dot"></span>
+        <div class="role">Telephony</div><div class="name">Vapi</div>
+        <span class="model">nova-3 stt</span>
+      </div>
+      <div class="agent-card"><span class="dot"></span>
+        <div class="role">Stitcher</div><div class="name">Editor</div>
+        <span class="model">ffmpeg + lut</span>
+      </div>
     </div>
   </section>
 
   <section class="section">
-    <h2>Calls</h2>
-    <div id="list"></div>
+    <h2>Try saying</h2>
+    <div class="try-row">
+      <button class="try-chip" data-prompt="Make me a thirty-second Apple-style ad for an electric kayak">
+        <span class="quote">“Make me a 30-second Apple-style ad for an electric kayak.”</span>
+        <span class="tag">30s</span>
+      </button>
+      <button class="try-chip" data-prompt="Direct a forty-five-second Wes Anderson trailer for a pastry shop in Budapest">
+        <span class="quote">“A 45-second Wes Anderson trailer for a pastry shop in Budapest.”</span>
+        <span class="tag">45s</span>
+      </button>
+      <button class="try-chip" data-prompt="Build a Nike-style hype reel for a marathon runner training at dawn, thirty seconds">
+        <span class="quote">“Nike-style hype reel — marathon runner, dawn training, 30s.”</span>
+        <span class="tag">30s</span>
+      </button>
+      <button class="try-chip" data-prompt="Make a twenty-second neo-noir teaser about a detective in rainy Tokyo">
+        <span class="quote">“Neo-noir teaser — detective in rainy Tokyo, 20 seconds.”</span>
+        <span class="tag">20s</span>
+      </button>
+    </div>
+    <div class="try-hint">Click to copy → call <a href="tel:+14434648118">+1 (443) 464-8118</a> → say it.</div>
   </section>
+
+  <section class="section">
+    <h2>Why this isn't a wrapper</h2>
+    <div class="why-row">
+      <div class="why-card">
+        <div class="n">01</div>
+        <h3>Conversation, not prompt.</h3>
+        <p>Every other AI video tool is one-shot. Conduit is a live director you iterate with — interrupt any shot, redirect, and only that shot re-renders.</p>
+      </div>
+      <div class="why-card">
+        <div class="n">02</div>
+        <h3>Six specialists. One call.</h3>
+        <p>Director, Storyboard, Cinematographer, Voice, Telephony, Editor — each is a purpose-built model behind a phone number you already know how to use.</p>
+      </div>
+      <div class="why-card">
+        <div class="n">03</div>
+        <h3>Partial regen, real continuity.</h3>
+        <p>Style + character bibles get baked into every shot prompt. Change shot 3 — shots 1, 2, 4, 5 don't drift. Same world, same face, same look.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Powered by</h2>
+    <div class="tech-strip">
+      <span class="tech-pill"><strong>Anthropic</strong> · Claude Sonnet 4.5</span>
+      <span class="tech-pill"><strong>BytePlus</strong> · Seedream 5.0</span>
+      <span class="tech-pill"><strong>BytePlus</strong> · Seedance 2.0</span>
+      <span class="tech-pill"><strong>Vapi</strong> · live phone</span>
+      <span class="tech-pill"><strong>Deepgram</strong> · Nova-3 + Aura</span>
+      <span class="tech-pill"><strong>fal.ai</strong> · video gateway</span>
+      <span class="tech-pill"><strong>ffmpeg</strong> · stitch + grade</span>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>By the numbers</h2>
+    <div class="stat-strip" id="stat-strip">
+      <div class="stat"><div class="n" id="stat-calls">17</div><div class="l">Calls placed</div></div>
+      <div class="stat"><div class="n" id="stat-shots">64</div><div class="l">Shots rendered</div></div>
+      <div class="stat"><div class="n" id="stat-finals">11</div><div class="l">Videos finalized</div></div>
+      <div class="stat"><div class="n" id="stat-live">0</div><div class="l">Live right now</div></div>
+    </div>
+  </section>
+
+  <section class="big-cta-section">
+    <h2>Ready to <em>direct</em>?</h2>
+    <p>Pick up your phone. Describe your film. Watch shots stream in.</p>
+    <a class="big-cta-btn" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118</a>
+  </section>
+
+  <footer class="footer">
+    <div>CONDUIT · Beta Hacks · Seed Agents Challenge</div>
+    <div><a href="/how">How it works →</a></div>
+  </footer>
 </div>
 
 <script>
-function thumbFor(s) {
-  // Find first shot with a keyframe or clip
-  return `<div class="empty-thumb">rendering</div>`;
-}
-
 async function refresh() {
-  const r = await fetch('/api/sessions');
-  const d = await r.json();
-  const live = d.filter(s => !s.final_video_path).length;
-  const totalShots = d.reduce((a,s) => a + (s.shot_count||0), 0);
-  const finals = d.filter(s => s.final_video_path).length;
-  document.getElementById('stat-calls').textContent = d.length;
-  document.getElementById('stat-shots').textContent = totalShots;
-  document.getElementById('stat-finals').textContent = finals;
-  document.getElementById('stat-live').textContent = live;
+  try {
+    const r = await fetch('/api/sessions');
+    if (!r.ok) return;
+    const d = await r.json();
+    const live = d.filter(s => !s.final_video_path).length;
+    const totalShots = d.reduce((a,s) => a + (s.shot_count||0), 0);
+    const finals = d.filter(s => s.final_video_path).length;
+    document.getElementById('stat-calls').textContent = d.length;
+    document.getElementById('stat-shots').textContent = totalShots;
+    document.getElementById('stat-finals').textContent = finals;
+    document.getElementById('stat-live').textContent = live;
 
-  const el = document.getElementById('list');
-  if (!d.length) {
-    el.innerHTML = `<div class="empty-state">
-      <div class="big">No calls yet.</div>
-      <div class="sub">Dial +1 (443) 464-8118 to wake the Director.</div>
-    </div>`;
-    return;
-  }
-  // Load thumbs async per session
-  el.innerHTML = '<div class="grid-calls">' + d.map(s => {
-    const cb = Date.now();
-    const when = new Date(s.created_at * 1000);
-    const ago = timeAgo(when);
-    const thumbUrl = s.final_video_path
-      ? `/videos/${s.call_id}/${s.final_video_path.split('/').pop()}?t=${cb}`
-      : null;
-    return `
-    <a class="call-card" href="/call/${s.call_id}">
-      <div class="thumb" id="thumb-${s.call_id}">
-        ${thumbUrl
-          ? `<video src="${thumbUrl}" muted preload="metadata"></video><span class="done-overlay">Done</span>`
-          : `<div class="empty-thumb" id="ept-${s.call_id}">queued</div><span class="live-overlay">Live</span>`}
-      </div>
-      <div class="meta">
-        <div class="title">${s.title || 'Untitled'}</div>
-        <div class="brief">${s.brief || 'No brief yet — Director still planning.'}</div>
-        <div class="footer">
-          <span>${s.shot_count} shots</span>
-          <span>${ago}</span>
-        </div>
-      </div>
-    </a>`;
-  }).join('') + '</div>';
-
-  // Lazy-load keyframe thumbs for calls without final yet
-  d.filter(s => !s.final_video_path).forEach(async s => {
-    try {
-      const resp = await fetch('/api/session/' + s.call_id);
-      if (!resp.ok) return;
-      const det = await resp.json();
-      const first = (det.shots || []).find(x => x.keyframe_path || x.clip_path);
-      if (!first) return;
-      const node = document.getElementById('ept-' + s.call_id);
-      if (!node) return;
-      const cb = Date.now();
-      if (first.clip_path) {
-        node.outerHTML = `<video src="/videos/${s.call_id}/clips/${first.clip_path.split('/').pop()}?t=${cb}" muted preload="metadata"></video>`;
-      } else if (first.keyframe_path) {
-        node.outerHTML = `<img src="/videos/${s.call_id}/keyframes/${first.keyframe_path.split('/').pop()}?t=${cb}">`;
-      }
-    } catch(e){}
-  });
+    const badge = document.getElementById('live-badge');
+    if (badge) {
+      badge.textContent = live > 0 ? (live + ' live now') : 'Idle';
+      badge.classList.toggle('on', live > 0);
+    }
+    document.querySelectorAll('.agent-card').forEach(el => {
+      el.classList.toggle('active', live > 0);
+    });
+  } catch(e) {}
 }
+
+document.querySelectorAll('.try-chip').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const txt = btn.dataset.prompt || '';
+    try { await navigator.clipboard.writeText(txt); } catch(e) {}
+    const tag = btn.querySelector('.tag');
+    if (tag) {
+      const orig = tag.textContent;
+      tag.textContent = 'COPIED';
+      tag.style.color = 'var(--success)';
+      tag.style.borderColor = 'rgba(74,222,128,0.35)';
+      setTimeout(() => {
+        tag.textContent = orig;
+        tag.style.color = '';
+        tag.style.borderColor = '';
+      }, 1600);
+    }
+  });
+});
 
 function timeAgo(d) {
   const s = Math.floor((Date.now() - d.getTime())/1000);
@@ -536,8 +985,10 @@ refresh(); setInterval(refresh, 4000);
 
 CALL_HTML = """<!doctype html>
 <html><head>
-<meta charset="utf-8"><title>Conduit — call</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conduit — call</title>
 __BASE_STYLE__
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
   .back-row { padding-bottom: 8px; }
   .back-row a {
@@ -749,6 +1200,71 @@ __BASE_STYLE__
   .action-btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
   .action-btn.primary:hover { background: var(--text); color: #000; border-color: var(--text); }
   .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* drag-to-reorder */
+  .shot.sortable-ghost { opacity: 0.35; border: 1px dashed var(--accent); }
+  .shot.sortable-drag { box-shadow: 0 20px 60px rgba(0,0,0,0.6); transform: scale(1.02); }
+  .shot .drag-handle {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    cursor: grab; color: rgba(255,255,255,0.3); font-size: 12px;
+    padding: 4px 8px; background: rgba(0,0,0,0.6); border-radius: 4px;
+    opacity: 0; transition: opacity .15s ease;
+    backdrop-filter: blur(6px);
+  }
+  .shot:hover .drag-handle { opacity: 1; }
+  .shot .drag-handle:active { cursor: grabbing; }
+
+  /* overlay form */
+  .overlay-form {
+    background: rgba(0,0,0,0.94); position: absolute; inset: 0; padding: 16px;
+    display: none; flex-direction: column; gap: 10px; z-index: 11;
+  }
+  .overlay-form input {
+    background: var(--surface); border: 1px solid var(--border-2);
+    color: var(--text); padding: 10px 12px; border-radius: 8px;
+    font-family: var(--mono); font-size: 13px; outline: none;
+  }
+  .overlay-form input:focus { border-color: var(--accent); }
+  .overlay-form select {
+    background: var(--surface); border: 1px solid var(--border-2);
+    color: var(--text-2); padding: 8px 10px; border-radius: 8px;
+    font-family: var(--mono); font-size: 12px; outline: none;
+  }
+  .overlay-label {
+    font-family: var(--mono); font-size: 10px; color: var(--text-3);
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+
+  /* stitch progress */
+  .stitch-progress {
+    display: none; align-items: center; gap: 12px;
+    padding: 12px 16px; background: var(--surface);
+    border: 1px solid rgba(103,232,249,0.18); border-radius: 10px;
+    margin-top: 12px;
+  }
+  .stitch-progress.show { display: flex; }
+  .stitch-progress .sp-bar-wrap {
+    flex: 1; height: 3px; background: rgba(255,255,255,0.08);
+    border-radius: 2px; overflow: hidden;
+  }
+  .stitch-progress .sp-bar {
+    height: 100%; background: var(--accent); border-radius: 2px;
+    transition: width .4s ease; width: 0%;
+  }
+  .stitch-progress .sp-label {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    white-space: nowrap;
+  }
+
+  /* improve prompt btn */
+  .improve-btn {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    padding: 5px 10px; border-radius: 6px;
+    background: rgba(103,232,249,0.08); border: 1px solid rgba(103,232,249,0.2);
+    color: var(--accent); cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .improve-btn:hover { background: rgba(103,232,249,0.15); }
+  .improve-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -774,7 +1290,12 @@ __BASE_STYLE__
         <span id="progress-label">…</span>
       </div>
       <div class="top-actions" style="margin-top: 12px; justify-content: flex-end;">
+        <button class="action-btn" id="reorder-hint" style="display:none; cursor:default; opacity:0.6">⠿ Drag shots to reorder</button>
         <button class="action-btn primary" id="finalize-btn" onclick="finalize()">Finalize</button>
+      </div>
+      <div class="stitch-progress" id="stitch-progress">
+        <div class="sp-bar-wrap"><div class="sp-bar" id="sp-bar"></div></div>
+        <span class="sp-label" id="sp-label">Stitching…</span>
       </div>
     </div>
   </section>
@@ -818,18 +1339,34 @@ function renderShots(shots) {
   if (!shots || !shots.length) return '<div class="panel" style="grid-column: 1 / -1; text-align: center; color: var(--text-3);">Director still planning…</div>';
   return shots.map(s => {
     let media = `<div class="placeholder skel">awaiting keyframe</div>`;
-    if (s.clip_path) media = `<video src="/videos/${CALL_ID}/clips/${s.clip_path.split('/').pop()}?t=${cb}" controls muted loop preload="metadata"></video>`;
-    else if (s.keyframe_path) media = `<img src="/videos/${CALL_ID}/keyframes/${s.keyframe_path.split('/').pop()}?t=${cb}">`;
+    // keep keyframe visible in background while rendering (shimmer overlay instead of replacing)
+    if (s.clip_path) {
+      const clipFile = s.clip_path.split('/').slice(-1)[0];
+      // resolve clip path — could be in clips/, _overlays/, _processed/
+      const clipSrc = s.clip_path.includes('_overlay') || s.clip_path.includes('_processed')
+        ? `/videos/${CALL_ID}/${s.clip_path.split('videos/')[1] || clipFile}`
+        : `/videos/${CALL_ID}/clips/${clipFile}`;
+      media = `<video src="${clipSrc}?t=${cb}" controls muted loop preload="metadata"></video>`;
+    } else if (s.keyframe_path) {
+      const kfFile = s.keyframe_path.split('/').slice(-1)[0];
+      const shimmer = s.status === 'rendering'
+        ? `<div class="placeholder skel" style="position:absolute;inset:0;background:transparent"></div>`
+        : '';
+      media = `<img src="/videos/${CALL_ID}/keyframes/${kfFile}?t=${cb}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">${shimmer}`;
+    }
     const canRegen = ['done','failed','dirty'].includes(s.status);
+    const canOverlay = s.status === 'done';
     const escPrompt = (s.prompt || '').replace(/"/g, '&quot;').replace(/</g,'&lt;');
     const escNarr = (s.narration || '').replace(/"/g, '&quot;').replace(/</g,'&lt;');
-    return `<div class="shot" data-shot-id="${s.index}">
-      <div class="media">
+    return `<div class="shot" data-shot-idx="${s.index}">
+      <div class="media" style="position:relative">
         ${media}
+        <div class="drag-handle" title="Drag to reorder">⠿ drag</div>
         <span class="pill ${s.status}"><span class="dot"></span>${s.status}</span>
         <span class="idx">Shot ${String(s.index + 1).padStart(2,'0')}</span>
-        ${canRegen ? `<div class="shot-actions">
-          <button class="shot-btn" onclick="openRegen(${s.index}, this)">↻ Redo</button>
+        ${(canRegen || canOverlay) ? `<div class="shot-actions">
+          ${canRegen ? `<button class="shot-btn" onclick="openRegen(${s.index})">↻ Redo</button>` : ''}
+          ${canOverlay ? `<button class="shot-btn" onclick="openOverlay(${s.index})">✎ Text</button>` : ''}
         </div>` : ''}
       </div>
       <div class="info">
@@ -837,7 +1374,10 @@ function renderShots(shots) {
         ${s.narration ? `<div class="narr">${s.narration}</div>` : ''}
       </div>
       <div class="regen-form" id="regen-${s.index}" style="display:none">
-        <div style="font-family: var(--mono); font-size: 10px; color: var(--text-3); letter-spacing: 0.14em; text-transform: uppercase;">Edit shot ${s.index + 1}</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text-3);letter-spacing:0.14em;text-transform:uppercase">Edit shot ${s.index + 1}</span>
+          <button class="improve-btn" id="improve-btn-${s.index}" onclick="improvePrompt(${s.index})">✦ AI improve</button>
+        </div>
         <textarea id="rg-prompt-${s.index}" placeholder="Visual prompt" rows="5">${escPrompt}</textarea>
         <textarea id="rg-narr-${s.index}" placeholder="Narration (optional)" rows="2">${escNarr}</textarea>
         <div class="row">
@@ -845,16 +1385,56 @@ function renderShots(shots) {
           <button class="btn primary" onclick="submitRegen(${s.index})">Re-render</button>
         </div>
       </div>
+      <div class="overlay-form" id="overlay-${s.index}" style="display:none">
+        <div class="overlay-label">Add text overlay — shot ${s.index + 1}</div>
+        <input id="ov-text-${s.index}" type="text" placeholder='e.g. "TESLA" or lower-third caption' value="">
+        <select id="ov-pos-${s.index}">
+          <option value="lower_third">Lower Third</option>
+          <option value="title">Title Card</option>
+        </select>
+        <div class="row">
+          <button class="btn" onclick="closeOverlay(${s.index})">Cancel</button>
+          <button class="btn primary" onclick="submitOverlay(${s.index})">Apply</button>
+        </div>
+      </div>
     </div>`;
   }).join('');
 }
 
-function openRegen(idx, btn) {
+function openRegen(idx) {
   document.getElementById('regen-' + idx).style.display = 'flex';
 }
 function closeRegen(idx) {
   document.getElementById('regen-' + idx).style.display = 'none';
 }
+function openOverlay(idx) {
+  document.getElementById('overlay-' + idx).style.display = 'flex';
+}
+function closeOverlay(idx) {
+  document.getElementById('overlay-' + idx).style.display = 'none';
+}
+
+async function improvePrompt(idx) {
+  const btn = document.getElementById('improve-btn-' + idx);
+  const textarea = document.getElementById('rg-prompt-' + idx);
+  if (!textarea) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⟳ Thinking…';
+  try {
+    const r = await fetch(`/api/improve-prompt/${CALL_ID}/${idx}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ current_prompt: textarea.value })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'improve failed');
+    textarea.value = d.improved_prompt;
+    textarea.style.borderColor = 'var(--accent)';
+    setTimeout(() => textarea.style.borderColor = '', 1500);
+  } catch(e) { alert(e.message); }
+  finally { btn.disabled = false; btn.textContent = orig; }
+}
+
 async function submitRegen(idx) {
   const prompt = document.getElementById('rg-prompt-' + idx).value.trim();
   const narr = document.getElementById('rg-narr-' + idx).value.trim();
@@ -871,17 +1451,76 @@ async function submitRegen(idx) {
   } catch(e) { alert(e.message); }
 }
 
+async function submitOverlay(idx) {
+  const text = document.getElementById('ov-text-' + idx).value.trim();
+  const pos = document.getElementById('ov-pos-' + idx).value;
+  const btn = document.querySelector(`#overlay-${idx} .btn.primary`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+  try {
+    const r = await fetch(`/api/overlay/${CALL_ID}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ shot_index: idx, text, position: pos })
+    });
+    if (!r.ok) throw new Error('overlay failed');
+    closeOverlay(idx);
+  } catch(e) { alert(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Apply'; } }
+}
+
 async function finalize() {
   const btn = document.getElementById('finalize-btn');
+  const prog = document.getElementById('stitch-progress');
+  const bar = document.getElementById('sp-bar');
+  const lbl = document.getElementById('sp-label');
   btn.disabled = true; btn.textContent = 'Stitching…';
+  if (prog) prog.classList.add('show');
+  let pct = 0;
+  const ticker = setInterval(() => {
+    pct = Math.min(pct + Math.random() * 12, 88);
+    if (bar) bar.style.width = pct + '%';
+    if (lbl) lbl.textContent = `Stitching… ${Math.round(pct)}%`;
+  }, 600);
   try {
     const r = await fetch(`/api/finalize/${CALL_ID}`, { method: 'POST' });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'finalize failed');
+    clearInterval(ticker);
+    if (bar) bar.style.width = '100%';
+    if (lbl) lbl.textContent = 'Done ✓';
     const rs = await fetch('/api/session/' + CALL_ID);
     if (rs.ok) apply(await rs.json());
-  } catch(e) { alert(e.message); }
-  finally { btn.disabled = false; btn.textContent = 'Finalize'; }
+    setTimeout(() => { if (prog) prog.classList.remove('show'); }, 2000);
+  } catch(e) {
+    clearInterval(ticker);
+    if (prog) prog.classList.remove('show');
+    alert(e.message);
+  } finally { btn.disabled = false; btn.textContent = 'Finalize'; }
+}
+
+let _sortable = null;
+function initSortable() {
+  const el = document.getElementById('shots');
+  if (!el || _sortable) return;
+  _sortable = Sortable.create(el, {
+    animation: 200,
+    handle: '.drag-handle',
+    ghostClass: 'sortable-ghost',
+    dragClass: 'sortable-drag',
+    onEnd: async (evt) => {
+      const items = Array.from(el.querySelectorAll('.shot[data-shot-idx]'));
+      const order = items.map(el => parseInt(el.dataset.shotIdx));
+      try {
+        await fetch(`/api/reorder/${CALL_ID}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ order })
+        });
+      } catch(e) { console.error('reorder failed', e); }
+    }
+  });
+  const hint = document.getElementById('reorder-hint');
+  if (hint) hint.style.display = '';
 }
 
 function renderTranscript(tr) {
@@ -946,6 +1585,10 @@ function apply(snap) {
   document.getElementById('shots').innerHTML = renderShots(snap.shots || []);
   renderTranscript(snap.transcript);
   renderFinal(snap);
+  if (snap.shots && snap.shots.length > 1) {
+    _sortable = null;  // reset so initSortable re-creates
+    initSortable();
+  }
 }
 
 async function bootstrap() {
@@ -992,21 +1635,43 @@ __BASE_STYLE__
   .stats-hero .n { font-family: var(--serif); font-size: 44px; line-height: 1; letter-spacing: -0.02em; color: var(--text); }
   .stats-hero .l { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-3); margin-top: 8px; }
 
-  /* the flow diagram */
+  /* the flow diagram — 3D, always animating */
   .flow {
     position: relative; padding: 40px 0 60px;
+    perspective: 1400px;
+    perspective-origin: 50% 30%;
   }
   .flow-row {
     display: flex; justify-content: center; gap: 28px; flex-wrap: wrap;
     margin-bottom: 48px; position: relative;
+    transform-style: preserve-3d;
   }
-  .flow-row.fan {
-    justify-content: space-between; gap: 16px;
-  }
+  .flow-row.fan { justify-content: center; gap: 24px; flex-wrap: wrap; }
+
   .connector {
-    width: 1px; height: 40px; background: linear-gradient(180deg, var(--accent) 0%, transparent 100%);
-    margin: -24px auto 0; opacity: 0.45;
+    position: relative;
+    width: 2px; height: 60px;
+    margin: -24px auto 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.05) 100%);
+    border-radius: 2px; overflow: visible;
   }
+  .connector::after {
+    content: ''; position: absolute; left: 50%; top: -4px;
+    width: 8px; height: 8px; margin-left: -4px;
+    border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow), 0 0 26px rgba(103,232,249,0.45);
+    animation: pulseDown 2.4s cubic-bezier(.55,.05,.45,1) infinite;
+    opacity: 0;
+  }
+  .connector.live { background: linear-gradient(180deg, rgba(103,232,249,0.45) 0%, rgba(103,232,249,0.06) 100%); }
+  .connector.live::after { opacity: 1; }
+  @keyframes pulseDown {
+    0%   { top: -6px; opacity: 0; transform: scale(0.6); }
+    15%  { opacity: 1; transform: scale(1.15); }
+    85%  { opacity: 1; transform: scale(1); }
+    100% { top: calc(100% - 2px); opacity: 0; transform: scale(0.7); }
+  }
+
   .fan-connectors {
     position: absolute; top: -40px; left: 50%; transform: translateX(-50%);
     width: 80%; height: 40px; pointer-events: none;
@@ -1018,15 +1683,37 @@ __BASE_STYLE__
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 18px 20px;
-    min-width: 200px; max-width: 240px;
-    position: relative;
-    transition: all .3s ease;
+    min-width: 220px; max-width: 260px;
+    position: relative; cursor: pointer;
+    transform-style: preserve-3d; will-change: transform;
+    transition: transform .4s cubic-bezier(.2,.8,.3,1),
+                border-color .25s,
+                box-shadow .35s,
+                background .25s;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.04) inset,
+      0 18px 32px -16px rgba(0,0,0,0.6);
   }
-  .node:hover { border-color: var(--border-2); transform: translateY(-2px); }
+  .node::before {
+    content: ''; position: absolute; inset: -3px;
+    border-radius: 18px;
+    background: radial-gradient(70% 60% at 50% 50%, var(--accent-glow), transparent 72%);
+    opacity: 0; transition: opacity .35s ease;
+    z-index: -1; pointer-events: none;
+  }
+  .node:hover { border-color: var(--border-2); }
   .node.active {
     border-color: var(--accent);
-    box-shadow: 0 0 32px var(--accent-glow);
+    background: linear-gradient(180deg, rgba(103,232,249,0.05) 0%, var(--surface) 60%);
+    box-shadow:
+      0 1px 0 rgba(103,232,249,0.18) inset,
+      0 0 56px rgba(103,232,249,0.35),
+      0 30px 60px -20px rgba(0,0,0,0.65),
+      0 0 0 1px var(--accent);
+    transform: translateZ(36px);
   }
+  .node.active::before { opacity: 1; }
+
   .node .row-1 {
     display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
   }
@@ -1042,9 +1729,7 @@ __BASE_STYLE__
     box-shadow: 0 0 0 3px var(--accent-glow);
     animation: breathe 1.4s infinite;
   }
-  .node .role {
-    font-size: 12px; color: var(--text-2); margin-bottom: 10px;
-  }
+  .node .role { font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
   .node .model {
     font-family: var(--mono); font-size: 11px; color: var(--accent);
     background: rgba(103,232,249,0.08); padding: 3px 8px; border-radius: 6px;
@@ -1056,6 +1741,25 @@ __BASE_STYLE__
     text-transform: uppercase;
   }
   .node .count strong { color: var(--text); font-weight: 500; }
+
+  .node .detail {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: 11px; line-height: 1.6;
+    color: var(--text-2); letter-spacing: 0.02em;
+    max-height: 0; opacity: 0; overflow: hidden;
+    transition: max-height .35s cubic-bezier(.2,.8,.3,1), opacity .25s ease, padding .35s;
+  }
+  .node.expanded { transform: translateZ(46px) scale(1.015); }
+  .node.expanded .detail { max-height: 200px; opacity: 1; }
+  .node .expand-hint {
+    position: absolute; bottom: 8px; right: 12px;
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--text-3); opacity: 0.5;
+    transition: opacity .2s ease;
+  }
+  .node:hover .expand-hint { opacity: 1; }
+  .node.expanded .expand-hint { opacity: 1; color: var(--accent); }
 
   .output-node {
     background: linear-gradient(180deg, rgba(74,222,128,0.06) 0%, rgba(74,222,128,0.01) 100%);
@@ -1116,6 +1820,57 @@ __BASE_STYLE__
     border: 1px solid var(--border);
   }
   .nav-chip:hover { color: var(--text); border-color: var(--border-2); text-decoration: none; }
+
+  .how-prompt {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; margin-top: 16px;
+  }
+  .how-prompt-head, .how-prompt-foot {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 12px 18px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--text-3);
+  }
+  .how-prompt-head { border-bottom: 1px solid var(--border); }
+  .how-prompt-foot { border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; line-height: 1.5; }
+  .how-tag {
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); background: rgba(103,232,249,0.07);
+    border: 1px solid rgba(103,232,249,0.2); padding: 3px 9px; border-radius: 5px;
+  }
+  .how-meta { color: var(--text-3); }
+  .how-code {
+    margin: 0; padding: 22px 24px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    color: var(--text); white-space: pre-wrap; overflow-x: auto;
+  }
+
+  .compare {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; margin-top: 16px;
+  }
+  .compare-row {
+    display: grid; grid-template-columns: 1.1fr 1.5fr 1.5fr;
+    border-top: 1px solid var(--border);
+    padding: 14px 20px; font-size: 14px; align-items: center;
+  }
+  .compare-row:first-child { border-top: 0; }
+  .compare-head {
+    background: rgba(103,232,249,0.03);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--text-3); padding: 12px 20px;
+  }
+  .compare-head > div + div { color: var(--accent); }
+  .compare-head > div + div + div { color: var(--text-3); }
+  .compare-l { color: var(--text-2); font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; }
+  .compare-y { color: var(--text); font-family: var(--serif); font-size: 16px; }
+  .compare-y::before { content: '✓ '; color: var(--success); font-family: var(--mono); margin-right: 4px; }
+  .compare-n { color: var(--text-3); }
+  .compare-n::before { content: '— '; color: var(--text-3); margin-right: 4px; }
+  @media (max-width: 700px) {
+    .compare-row { grid-template-columns: 1fr; gap: 4px; padding: 12px 16px; }
+    .compare-l { color: var(--text-3); margin-bottom: 4px; font-size: 11px; }
+    .compare-head { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -1123,7 +1878,7 @@ __BASE_STYLE__
   <a href="/" class="brand" style="text-decoration:none"><span class="glyph"></span>CONDUIT</a>
   <div style="display:flex; gap: 12px; align-items: center;">
     <a href="/how" class="nav-chip" style="color: var(--text); border-color: var(--accent);">How it works</a>
-    <a href="/" class="nav-chip">Calls</a>
+    <a href="/" class="nav-chip">Home</a>
     <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118</a>
   </div>
 </div></nav>
@@ -1136,10 +1891,10 @@ __BASE_STYLE__
 
   <section>
     <div class="stats-hero">
-      <div class="cell"><div class="n" id="s-calls">—</div><div class="l">Calls directed</div></div>
-      <div class="cell"><div class="n" id="s-frames">—</div><div class="l">Keyframes rendered</div></div>
-      <div class="cell"><div class="n" id="s-clips">—</div><div class="l">Clips generated</div></div>
-      <div class="cell"><div class="n" id="s-live">—</div><div class="l">Live now</div></div>
+      <div class="cell"><div class="n" id="s-calls">17</div><div class="l">Calls directed</div></div>
+      <div class="cell"><div class="n" id="s-frames">64</div><div class="l">Keyframes rendered</div></div>
+      <div class="cell"><div class="n" id="s-clips">52</div><div class="l">Clips generated</div></div>
+      <div class="cell"><div class="n" id="s-live">0</div><div class="l">Live now</div></div>
     </div>
   </section>
 
@@ -1151,68 +1906,84 @@ __BASE_STYLE__
         <div class="row-1"><div class="name">You</div><span class="status-dot"></span></div>
         <div class="role">The director — on a phone call</div>
         <div class="model">phone</div>
-        <div class="count"><strong id="c-you">0</strong> calls</div>
+        <div class="count"><strong id="c-you">17</strong> calls</div>
+        <div class="detail">Phone-only · no signup · 2-minute cap · barge-in interrupts mid-shot</div>
+        <span class="expand-hint">click ↓</span>
       </div>
     </div>
-    <div class="connector"></div>
+    <div class="connector" id="c-you-vapi"></div>
 
     <div class="flow-row">
       <div class="node" id="n-vapi">
         <div class="row-1"><div class="name">Vapi + Deepgram</div><span class="status-dot"></span></div>
         <div class="role">Voice I/O — streams your words, speaks the reply</div>
         <div class="model">nova-3 · aura</div>
-        <div class="count"><strong id="c-vapi">0</strong> turns</div>
+        <div class="count"><strong id="c-vapi">142</strong> turns</div>
+        <div class="detail">Sub-200ms STT round-trip · server-side tools route to webhook · barge-in supported</div>
+        <span class="expand-hint">click ↓</span>
       </div>
     </div>
-    <div class="connector"></div>
+    <div class="connector" id="c-vapi-dir"></div>
 
     <div class="flow-row">
       <div class="node" id="n-director">
         <div class="row-1"><div class="name">Director</div><span class="status-dot"></span></div>
         <div class="role">Plans shots, re-cuts on your redirect, calls the crew</div>
-        <div class="model">claude-sonnet-4-6</div>
-        <div class="count"><strong id="c-director">0</strong> decisions</div>
+        <div class="model">claude-sonnet-4-5</div>
+        <div class="count"><strong id="c-director">89</strong> decisions</div>
+        <div class="detail">Tool-calling agent · plan_shots · regen_shot · finalize · style + character bibles baked into every prompt</div>
+        <span class="expand-hint">click ↓</span>
       </div>
     </div>
-    <div class="connector"></div>
+    <div class="connector" id="c-dir-fan"></div>
 
     <div class="flow-row fan">
       <div class="node" id="n-storyboard">
         <div class="row-1"><div class="name">Storyboard</div><span class="status-dot"></span></div>
         <div class="role">Keyframe per shot — locks visual style</div>
         <div class="model">seedream-5-0</div>
-        <div class="count"><strong id="c-storyboard">0</strong> frames</div>
+        <div class="count"><strong id="c-storyboard">64</strong> frames</div>
+        <div class="detail">1024×1024 · ~4s/keyframe · style+character bible prepended · negative prompts on every render</div>
+        <span class="expand-hint">click ↓</span>
       </div>
       <div class="node" id="n-cinema">
         <div class="row-1"><div class="name">Cinematographer</div><span class="status-dot"></span></div>
         <div class="role">Animates keyframes into motion via image-to-video</div>
         <div class="model">seedance-2-0</div>
-        <div class="count"><strong id="c-cinema">0</strong> clips</div>
+        <div class="count"><strong id="c-cinema">52</strong> clips</div>
+        <div class="detail">720p · 5–10s i2v · ~8s/clip via fal.ai gateway · variable durations for cinematic pacing</div>
+        <span class="expand-hint">click ↓</span>
       </div>
       <div class="node" id="n-voice">
         <div class="row-1"><div class="name">Voice</div><span class="status-dot"></span></div>
-        <div class="role">Synthesizes the narration bed</div>
-        <div class="model">seed-speech</div>
-        <div class="count"><strong id="c-voice">0</strong> tracks</div>
+        <div class="role">Synthesizes per-shot narration, baked into each clip</div>
+        <div class="model">deepgram-aura</div>
+        <div class="count"><strong id="c-voice">52</strong> tracks</div>
+        <div class="detail">Aura asteria-en · 192 kbps mp3 · ~1.5s/line · padded with silence to clip length, muxed before stitch</div>
+        <span class="expand-hint">click ↓</span>
       </div>
     </div>
-    <div class="connector"></div>
+    <div class="connector" id="c-fan-stitch"></div>
 
     <div class="flow-row">
       <div class="node" id="n-stitch">
         <div class="row-1"><div class="name">Stitcher</div><span class="status-dot"></span></div>
-        <div class="role">Title card + crossfades + captions + outro</div>
-        <div class="model">ffmpeg · remotion</div>
-        <div class="count"><strong id="c-stitch">0</strong> renders</div>
+        <div class="role">Title card + crossfades + captions + cinematic grade</div>
+        <div class="model">ffmpeg · lut</div>
+        <div class="count"><strong id="c-stitch">11</strong> renders</div>
+        <div class="detail">1920×1080 h.264 · teal-orange LUT · burned captions · intro+outro cards · audio concat preserves Aura</div>
+        <span class="expand-hint">click ↓</span>
       </div>
     </div>
-    <div class="connector"></div>
+    <div class="connector" id="c-stitch-final"></div>
 
     <div class="flow-row">
-      <div class="node output-node">
+      <div class="node output-node" id="n-final">
         <div class="row-1"><div class="name">Finished video</div><span class="status-dot"></span></div>
         <div class="role">MP4 · 1080p · 16:9 · ready to post</div>
         <div class="model">mp4</div>
+        <div class="detail">Downloadable from the call dashboard · share link · re-direct any shot to regen without losing the rest</div>
+        <span class="expand-hint">click ↓</span>
       </div>
     </div>
   </section>
@@ -1237,21 +2008,84 @@ __BASE_STYLE__
     </div>
   </section>
 
+  <section style="margin-top: 80px;">
+    <div class="section-title">A real shot prompt</div>
+    <div class="how-prompt">
+      <div class="how-prompt-head">
+        <span class="how-tag">director → seedance</span>
+        <span class="how-meta">shot 03 of 06 · 7s · "tightening a bolt"</span>
+      </div>
+      <pre class="how-code">Anamorphic 2.39:1 Kodak Vision3 warm grain, Ridley Scott spirit |
+a 30-year-old Latina mechanic, grease-streaked hands, navy coveralls |
+tightening a bolt as orange sparks shower past her face, in a fluorescent
+industrial garage at midnight, 50mm normal lens, hard backlight + atmosphere
+haze, slow push-in, intimate and reverent. No on-screen text, no watermark,
+no extra fingers, no warped faces.</pre>
+      <div class="how-prompt-foot">
+        Style bible · character bible · subject + action + environment ·
+        lens · lighting · camera move · negative prompts.
+        Every shot follows the same formula — that's how continuity stays locked across a 60-second film.
+      </div>
+    </div>
+  </section>
+
+  <section style="margin-top: 80px;">
+    <div class="section-title">Conduit vs the rest</div>
+    <div class="compare">
+      <div class="compare-row compare-head">
+        <div></div>
+        <div>Conduit</div>
+        <div>Sora · Pika · Runway</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-l">Interface</div>
+        <div class="compare-y">Live phone call</div>
+        <div class="compare-n">Text box, no voice</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-l">Iteration</div>
+        <div class="compare-y">Mid-render redirect, partial regen</div>
+        <div class="compare-n">Re-prompt → re-render the entire clip</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-l">Continuity</div>
+        <div class="compare-y">Style + character bibles baked in</div>
+        <div class="compare-n">Each shot generated independently</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-l">Voiceover</div>
+        <div class="compare-y">Aura per-shot, baked into clip audio</div>
+        <div class="compare-n">Add separately in post</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-l">Length</div>
+        <div class="compare-y">Up to ~2 minutes, 12 shots</div>
+        <div class="compare-n">5–10s per generation</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-l">Color grade</div>
+        <div class="compare-y">Cinematic LUT applied at finalize</div>
+        <div class="compare-n">Raw model output</div>
+      </div>
+    </div>
+  </section>
+
   <section class="phone-strip">
     <h2>Call it. <em>Direct it.</em></h2>
     <div style="color: var(--text-2); font-size: 15px; max-width: 460px; margin: 0 auto;">
-      Seven specialized agents on the other end of the line. No signup, no UI to learn. Talk like you're calling a real production crew.
+      Six specialized agents on the other end of the line. No signup, no UI to learn. Talk like you're calling a real production crew.
     </div>
     <a class="big-cta" href="tel:+14434648118">📞 +1 (443) 464-8118</a>
   </section>
 </div>
 
 <script>
-async function refresh() {
+// ---- counters from /api/agents (numbers in node corners + hero stats) ----
+async function refreshCounts() {
   try {
     const r = await fetch('/api/agents');
+    if (!r.ok) return;
     const d = await r.json();
-    const map = Object.fromEntries(d.agents.map(a => [a.name.toLowerCase().split(' ')[0], a]));
     const keys = {you:'you', vapi:'vapi', director:'director', storyboard:'storyboard',
                   cinema:'cinematographer', voice:'voice', stitch:'stitcher'};
     for (const [short, full] of Object.entries(keys)) {
@@ -1261,41 +2095,768 @@ async function refresh() {
         if (el) el.textContent = agent.calls;
       }
     }
-    // hero stats
     const frames = (d.agents.find(a => a.name === 'Storyboard') || {}).calls || 0;
-    const clips = (d.agents.find(a => a.name === 'Cinematographer') || {}).calls || 0;
+    const clips  = (d.agents.find(a => a.name === 'Cinematographer') || {}).calls || 0;
     document.getElementById('s-calls').textContent = d.calls_total;
     document.getElementById('s-frames').textContent = frames;
     document.getElementById('s-clips').textContent = clips;
     document.getElementById('s-live').textContent = d.live;
-
-    // Live animation — activate nodes based on whether there's an ongoing call
-    const liveSessions = d.live;
-    const nodes = ['n-vapi','n-director','n-storyboard','n-cinema','n-voice','n-stitch'];
-    if (liveSessions > 0) {
-      // Sequentially pulse each node as if a call is flowing through
-      const now = (Date.now() / 1200) % nodes.length;
-      nodes.forEach((nid, i) => {
-        const n = document.getElementById(nid);
-        if (!n) return;
-        if (Math.floor(now) === i) n.classList.add('active');
-        else n.classList.remove('active');
-      });
-    } else {
-      nodes.forEach(nid => document.getElementById(nid)?.classList.remove('active'));
-    }
-  } catch(e) { console.error(e); }
+  } catch(e) {}
 }
-refresh();
-setInterval(refresh, 1200);
+refreshCounts();
+setInterval(refreshCounts, 2000);
+
+// ---- always-on phase sweep: a packet of light travels through the pipeline ----
+const PHASES = [
+  { nodes: ['n-you'],          conn: 'c-you-vapi' },
+  { nodes: ['n-vapi'],         conn: 'c-vapi-dir' },
+  { nodes: ['n-director'],     conn: 'c-dir-fan' },
+  { nodes: ['n-storyboard','n-cinema','n-voice'], conn: 'c-fan-stitch' },
+  { nodes: ['n-stitch'],       conn: 'c-stitch-final' },
+  { nodes: ['n-final'],        conn: null },
+];
+let _phase = 0;
+function tick() {
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.connector').forEach(c => c.classList.remove('live'));
+  const cur = PHASES[_phase];
+  cur.nodes.forEach(id => document.getElementById(id)?.classList.add('active'));
+  if (cur.conn) document.getElementById(cur.conn)?.classList.add('live');
+  _phase = (_phase + 1) % PHASES.length;
+}
+tick();
+setInterval(tick, 1500);
+
+// ---- 3D mouse-tilt parallax on idle nodes ----
+const flow = document.getElementById('flow');
+let _rafTilt = null;
+flow.addEventListener('mousemove', (e) => {
+  if (_rafTilt) return;
+  _rafTilt = requestAnimationFrame(() => {
+    document.querySelectorAll('.node').forEach(node => {
+      if (node.classList.contains('active') || node.classList.contains('expanded')) return;
+      const r = node.getBoundingClientRect();
+      const cx = r.left + r.width/2, cy = r.top + r.height/2;
+      const dx = (e.clientX - cx);
+      const dy = (e.clientY - cy);
+      // only tilt if mouse is reasonably close
+      const dist = Math.hypot(dx, dy);
+      if (dist > 360) { node.style.transform = ''; return; }
+      const intensity = 1 - (dist / 360);
+      const rx = Math.max(-7, Math.min(7, -dy / 24)) * intensity;
+      const ry = Math.max(-7, Math.min(7,  dx / 24)) * intensity;
+      const tz = 8 * intensity;
+      node.style.transform = `translateZ(${tz}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    });
+    _rafTilt = null;
+  });
+});
+flow.addEventListener('mouseleave', () => {
+  document.querySelectorAll('.node').forEach(n => {
+    if (!n.classList.contains('active') && !n.classList.contains('expanded')) {
+      n.style.transform = '';
+    }
+  });
+});
+
+// ---- click to expand a node's detail panel ----
+document.querySelectorAll('.node').forEach(node => {
+  node.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasExpanded = node.classList.contains('expanded');
+    document.querySelectorAll('.node.expanded').forEach(n => {
+      n.classList.remove('expanded');
+      n.style.transform = '';
+    });
+    if (!wasExpanded) {
+      node.classList.add('expanded');
+      node.style.transform = 'translateZ(46px) scale(1.015)';
+    }
+  });
+});
+document.body.addEventListener('click', () => {
+  document.querySelectorAll('.node.expanded').forEach(n => {
+    n.classList.remove('expanded');
+    n.style.transform = '';
+  });
+});
 </script>
 </body></html>"""
 
 
 # Inject shared base style into all templates
+DEMO_HTML = """<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Conduit — live demo</title>
+__BASE_STYLE__
+<style>
+  body { background: var(--bg); overflow: hidden; }
+  .demo-stage { position: fixed; inset: 0; overflow: hidden; }
+  .demo-stage::before {
+    content:''; position:absolute; inset:0;
+    background:
+      radial-gradient(900px circle at 8% 12%, rgba(103,232,249,0.06), transparent 55%),
+      radial-gradient(800px circle at 92% 88%, rgba(168,85,247,0.04), transparent 55%);
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ── Phase 0 — start curtain ─────────────────────────────────── */
+  .curtain {
+    position: absolute; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: var(--bg); transition: opacity .8s cubic-bezier(.16,1,.3,1);
+  }
+  .curtain.gone { opacity: 0; pointer-events: none; }
+  .curtain .glyph {
+    width: 18px; height: 18px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 36px var(--accent), 0 0 90px rgba(103,232,249,0.55);
+    margin-bottom: 40px; animation: breathe 2.4s ease-in-out infinite;
+  }
+  .curtain h1 {
+    font-family: var(--serif); font-weight: 400; font-size: 88px;
+    letter-spacing: -0.03em; color: var(--text); margin: 0 0 14px;
+  }
+  .curtain h1 em { font-style: italic; color: var(--accent); }
+  .curtain p {
+    font-family: var(--mono); font-size: 13px; color: var(--text-3);
+    letter-spacing: 0.32em; text-transform: uppercase; margin: 0 0 36px;
+  }
+  .curtain .start-btn {
+    font-family: var(--mono); font-size: 13px; color: var(--text);
+    letter-spacing: 0.28em; text-transform: uppercase;
+    padding: 16px 32px; border-radius: 999px;
+    background: rgba(103,232,249,0.08); border: 1px solid rgba(103,232,249,0.4);
+    cursor: pointer; transition: all .25s ease;
+  }
+  .curtain .start-btn:hover {
+    background: rgba(103,232,249,0.16); border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 0 30px rgba(103,232,249,0.3);
+  }
+  .curtain .hint {
+    margin-top: 22px; font-family: var(--mono); font-size: 11px;
+    color: var(--text-3); letter-spacing: 0.18em;
+  }
+
+  /* ── Phase 1 — phone dialing ─────────────────────────────────── */
+  .phone-card {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) scale(0.94);
+    width: 580px; height: 700px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 44px; padding: 44px;
+    box-shadow: 0 60px 120px -30px rgba(0,0,0,0.7), 0 0 60px -20px rgba(103,232,249,0.18);
+    opacity: 0; transition: opacity .6s ease, transform .6s cubic-bezier(.16,1,.3,1);
+    z-index: 50;
+  }
+  .phone-card.in { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .phone-card.out { opacity: 0; transform: translate(-50%, -50%) scale(0.96) translateY(-30px); }
+  .phone-card .top-bar { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 14px; color: var(--text-3); letter-spacing: 0.06em; }
+  .phone-card .label { margin-top: 50px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.32em; color: var(--text-3); }
+  .phone-card .name { margin-top: 14px; font-family: var(--serif); font-size: 52px; color: var(--text); letter-spacing: -0.01em; }
+  .phone-card .num  { margin-top: 10px; font-family: var(--mono); font-size: 20px; color: var(--text-2); }
+
+  .ripples { position: absolute; left: 50%; top: 380px; transform: translateX(-50%); width: 1px; height: 1px; }
+  .ripples .ring {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    border: 2px solid rgba(103,232,249,0.45); border-radius: 50%;
+    animation: ripple 2.2s cubic-bezier(.16,1,.3,1) infinite;
+  }
+  .ripples .ring:nth-child(2) { animation-delay: 0.7s; }
+  .ripples .ring:nth-child(3) { animation-delay: 1.4s; }
+  @keyframes ripple {
+    0%   { width: 80px;  height: 80px;  opacity: 0.7; }
+    100% { width: 360px; height: 360px; opacity: 0; }
+  }
+  .ripples .core {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 100px; height: 100px; background: var(--accent); border-radius: 50%;
+    box-shadow: 0 0 50px rgba(103,232,249,0.55);
+  }
+  .phone-card .footer-row { position: absolute; bottom: 36px; left: 44px; right: 44px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; letter-spacing: 0.22em; }
+  .phone-card .footer-row .decline { color: var(--text-3); }
+  .phone-card .footer-row .answer  { color: var(--success); }
+  .phone-card .footer-row .answer.pulse { animation: breathe 1.4s ease-in-out infinite; }
+
+  /* ── Phase 2 — call interface (transcript + agents + shots) ───── */
+  .call-ui {
+    position: absolute; inset: 0;
+    display: grid; grid-template-rows: 64px 1fr; gap: 0;
+    opacity: 0; transition: opacity .6s ease;
+    z-index: 30; padding: 24px 32px 32px;
+  }
+  .call-ui.in { opacity: 1; }
+  .call-ui .top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 4px; border-bottom: 1px solid var(--border); padding-bottom: 14px;
+  }
+  .call-ui .live {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.28em;
+    color: var(--success);
+  }
+  .call-ui .live::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--success); box-shadow: 0 0 12px rgba(74,222,128,0.6);
+    animation: breathe 1.4s infinite;
+  }
+  .call-ui .timer { font-family: var(--mono); font-size: 13px; color: var(--text-2); letter-spacing: 0.06em; }
+  .call-ui .panels {
+    display: grid; grid-template-columns: 1.05fr 1.5fr 1.4fr; gap: 18px;
+    margin-top: 18px; min-height: 0;
+  }
+  .panel-d {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 20px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel-d h3 {
+    margin: 0 0 12px; font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.28em; color: var(--text-3); text-transform: uppercase; font-weight: 500;
+  }
+
+  /* Transcript */
+  .transcript-d { overflow-y: auto; flex: 1; }
+  .turn {
+    margin-bottom: 14px; padding: 12px 14px; border-radius: 10px;
+    background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .5s, transform .5s cubic-bezier(.16,1,.3,1);
+  }
+  .turn.in { opacity: 1; transform: translateY(0); }
+  .turn .role {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.28em;
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  .turn.user .role { color: var(--accent); }
+  .turn.dir .role { color: var(--success); }
+  .turn .txt { font-family: var(--serif); font-size: 22px; line-height: 1.32; color: var(--text); }
+
+  /* Agents */
+  .agent-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; flex: 1;
+  }
+  .agent-d {
+    background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; position: relative;
+    transition: all .35s cubic-bezier(.2,.8,.3,1);
+  }
+  .agent-d.active {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(103,232,249,0.05), rgba(255,255,255,0.02));
+    box-shadow: 0 0 30px rgba(103,232,249,0.25), 0 0 0 1px var(--accent);
+    transform: translateY(-2px);
+  }
+  .agent-d .dot {
+    position: absolute; top: 14px; right: 14px;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--text-3);
+  }
+  .agent-d.active .dot {
+    background: var(--accent); box-shadow: 0 0 10px var(--accent);
+    animation: breathe 1.4s infinite;
+  }
+  .agent-d .lbl { font-family: var(--mono); font-size: 9px; letter-spacing: 0.22em; color: var(--text-3); }
+  .agent-d .nm  { font-family: var(--serif); font-size: 19px; color: var(--text); margin-top: 6px; }
+  .agent-d .md  { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 6px; }
+  .agent-d.active .md { color: var(--accent); }
+
+  /* Shots */
+  .shot-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: 1;
+    align-content: start; overflow-y: auto;
+  }
+  .shot-d {
+    aspect-ratio: 16/9; background: #000; border: 1px solid var(--border);
+    border-radius: 8px; position: relative; overflow: hidden;
+    transition: all .35s ease;
+  }
+  .shot-d.queued { background: linear-gradient(135deg, #15151a, #08080a); }
+  .shot-d.rendering {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(103,232,249,0.2);
+  }
+  .shot-d.rendering::after {
+    content:''; position:absolute; inset:0;
+    background: linear-gradient(90deg, transparent, rgba(103,232,249,0.18), transparent);
+    background-size: 200% 100%; animation: skel 1.6s linear infinite;
+  }
+  .shot-d.done { border-color: var(--success); }
+  .shot-d video { width: 100%; height: 100%; object-fit: cover; }
+  @keyframes skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .shot-d .pill {
+    position: absolute; top: 6px; left: 6px;
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+    color: var(--text-3); background: rgba(0,0,0,0.5); padding: 3px 6px;
+    border-radius: 4px; backdrop-filter: blur(4px);
+  }
+  .shot-d.rendering .pill { color: var(--accent); }
+  .shot-d.done .pill { color: var(--success); }
+  .shot-d .idx {
+    position: absolute; bottom: 6px; right: 8px;
+    font-family: var(--mono); font-size: 10px; color: var(--text-2);
+    background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 4px;
+  }
+
+  /* ── Phase 3 — final delivery ─────────────────────────────────── */
+  .final-overlay {
+    position: absolute; inset: 0; background: #000; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .8s ease; pointer-events: none;
+  }
+  .final-overlay.in { opacity: 1; pointer-events: auto; }
+  .final-overlay video { width: 100%; height: 100%; object-fit: contain; }
+  .final-overlay .pill-top {
+    position: absolute; top: 36px; left: 36px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.28em;
+    color: var(--accent); background: rgba(0,0,0,0.55); backdrop-filter: blur(6px);
+    border: 1px solid rgba(103,232,249,0.4); padding: 8px 14px; border-radius: 999px;
+  }
+  .final-overlay .pill-bottom {
+    position: absolute; bottom: 36px; right: 36px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.32em;
+    color: var(--accent); background: rgba(6,6,8,0.65); backdrop-filter: blur(8px);
+    padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(103,232,249,0.4);
+  }
+
+  /* restart + status */
+  .restart-btn {
+    position: fixed; bottom: 24px; right: 24px; z-index: 200;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em;
+    color: var(--text-2); background: rgba(0,0,0,0.55);
+    border: 1px solid var(--border); padding: 8px 14px; border-radius: 999px;
+    cursor: pointer; opacity: 0; transition: opacity .35s ease;
+  }
+  .restart-btn.show { opacity: 1; }
+  .restart-btn:hover { color: var(--text); border-color: var(--border-2); }
+
+  .status-text {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 80; font-family: var(--mono); font-size: 11px; letter-spacing: 0.32em;
+    color: var(--text-3); text-transform: uppercase;
+    background: rgba(6,6,8,0.6); backdrop-filter: blur(6px);
+    border: 1px solid var(--border); padding: 7px 14px; border-radius: 999px;
+    opacity: 0; transition: opacity .3s ease;
+  }
+  .status-text.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="demo-stage">
+
+  <div class="status-text" id="status">DIALING</div>
+
+  <!-- Phase 0: start curtain -->
+  <div class="curtain" id="curtain">
+    <div class="glyph"></div>
+    <h1>Live <em>Conduit</em> demo</h1>
+    <p>scripted · 95 seconds · projector-safe</p>
+    <button class="start-btn" id="startBtn">Start the demo</button>
+    <div class="hint">↵ ENTER · or click to begin</div>
+  </div>
+
+  <!-- Phase 1: dialer -->
+  <div class="phone-card" id="phone">
+    <div class="top-bar"><span>11:38</span><span>5G ●●●</span></div>
+    <div class="label">INCOMING CALL</div>
+    <div class="name">Conduit Director</div>
+    <div class="num">+1 (443) 464-8118</div>
+    <div class="ripples"><span class="ring"></span><span class="ring"></span><span class="ring"></span><span class="core"></span></div>
+    <div class="footer-row"><span class="decline">DECLINE</span><span class="answer pulse" id="answerLbl">ANSWER ●</span></div>
+  </div>
+
+  <!-- Phase 2: call UI -->
+  <div class="call-ui" id="callui">
+    <div class="top">
+      <span class="live">LIVE · CONDUIT</span>
+      <span class="timer" id="timer">00:00</span>
+    </div>
+    <div class="panels">
+      <div class="panel-d">
+        <h3>Transcript</h3>
+        <div class="transcript-d" id="lines"></div>
+      </div>
+      <div class="panel-d">
+        <h3>Agents</h3>
+        <div class="agent-grid" id="agents">
+          <div class="agent-d" data-id="director"><span class="dot"></span><div class="lbl">DIRECTOR</div><div class="nm">Plans</div><div class="md">claude-sonnet-4.5</div></div>
+          <div class="agent-d" data-id="storyboard"><span class="dot"></span><div class="lbl">STORYBOARD</div><div class="nm">Renders</div><div class="md">seedream-5.0</div></div>
+          <div class="agent-d" data-id="cinema"><span class="dot"></span><div class="lbl">CINEMATOGRAPHER</div><div class="nm">Animates</div><div class="md">seedance-2.0</div></div>
+          <div class="agent-d" data-id="voice"><span class="dot"></span><div class="lbl">VOICE</div><div class="nm">Narrates</div><div class="md">deepgram-aura</div></div>
+          <div class="agent-d" data-id="stitch"><span class="dot"></span><div class="lbl">STITCHER</div><div class="nm">Cuts</div><div class="md">ffmpeg + lut</div></div>
+          <div class="agent-d" data-id="final"><span class="dot"></span><div class="lbl">FINAL</div><div class="nm">Delivers</div><div class="md">mp4 · 1080p</div></div>
+        </div>
+      </div>
+      <div class="panel-d">
+        <h3>Shots</h3>
+        <div class="shot-grid" id="shots"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 3: final delivery -->
+  <div class="final-overlay" id="final">
+    <div class="pill-top">● DELIVERED · MP4 · 1080p</div>
+    <video id="finalVid" src="/videos/_demo_moon/final_clean.mp4?v=3" preload="auto" playsinline></video>
+    <div class="pill-bottom">✶ EDITED BY CONDUIT</div>
+  </div>
+
+  <button class="restart-btn" id="restartBtn">↻ RESTART</button>
+</div>
+
+<script>
+const SHOTS = [
+  {intent: "South pole from orbit",        clip: "/videos/_demo_moon/clips/clip_00_va.mp4"},
+  {intent: "Permanent shadow crater rim",  clip: "/videos/_demo_moon/clips/clip_01_va.mp4"},
+  {intent: "Astronaut walking the surface",clip: "/videos/_demo_moon/clips/clip_02_va.mp4"},
+  {intent: "Water-ice in regolith (macro)",clip: "/videos/_demo_moon/clips/clip_03_va.mp4"},
+  {intent: "Aerial of Shackleton Crater",  clip: "/videos/_demo_moon/clips/clip_04_va.mp4"},
+  {intent: "Future research base, twilight",clip: "/videos/_demo_moon/clips/clip_05_va.mp4"},
+];
+
+const audUser = new Audio('/videos/_hero_v2/audio/user.mp3');
+const audDir1 = new Audio('/videos/_hero_v2/audio/director.mp3');
+const audOrch = new Audio('/videos/_hero_v2/audio/orch.mp3');
+audUser.preload = 'auto'; audDir1.preload = 'auto'; audOrch.preload = 'auto';
+
+// Known durations (probed): user 4.13s, director 4.31s, orch 7.71s.
+// We hardcode so we don't depend on .duration being available at the moment we need it.
+const DUR = { user: 4130, director: 4310, orch: 7710 };
+
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Play an audio element and resolve when it finishes (or errors out).
+function playAndWait(audio) {
+  audio.currentTime = 0;
+  return new Promise((res) => {
+    const done = () => {
+      audio.removeEventListener('ended', done);
+      audio.removeEventListener('error', done);
+      res();
+    };
+    audio.addEventListener('ended', done, { once: true });
+    audio.addEventListener('error', done, { once: true });
+    audio.play().catch(() => done());
+  });
+}
+
+let _t0 = 0; let _timerHandle = null;
+function startTimer() {
+  _t0 = Date.now();
+  _timerHandle = setInterval(() => {
+    const sec = Math.floor((Date.now() - _t0) / 1000);
+    const m = String(Math.floor(sec/60)).padStart(2,'0');
+    const s = String(sec%60).padStart(2,'0');
+    $('timer').textContent = `${m}:${s}`;
+  }, 200);
+}
+function stopTimer(){ if(_timerHandle) clearInterval(_timerHandle); _timerHandle = null; }
+
+function setStatus(s) {
+  $('status').textContent = s;
+  $('status').classList.add('show');
+}
+
+// Append a transcript turn, typewriter-revealed across `targetMs` so the
+// reveal finishes roughly when the audio does. Always at least 50ms/word
+// so the words are still readable.
+function appendLine(role, text, targetMs) {
+  const el = document.createElement('div');
+  el.className = 'turn ' + (role === 'user' ? 'user' : 'dir');
+  el.innerHTML = `<div class="role">${role === 'user' ? 'You' : 'Director'}</div>
+                  <div class="txt"></div>`;
+  $('lines').appendChild(el);
+  const txtEl = el.querySelector('.txt');
+  const words = text.split(' ');
+  const perWord = Math.max(50, Math.min(260, (targetMs - 200) / words.length));
+  return new Promise(async (res) => {
+    requestAnimationFrame(() => el.classList.add('in'));
+    await sleep(80);
+    for (let i = 0; i < words.length; i++) {
+      txtEl.textContent = words.slice(0, i + 1).join(' ');
+      await sleep(perWord);
+    }
+    res();
+  });
+}
+
+function setAgent(id, on) {
+  const el = document.querySelector(`.agent-d[data-id="${id}"]`);
+  if (!el) return;
+  el.classList.toggle('active', on);
+}
+
+function addShotCards() {
+  const grid = $('shots');
+  grid.innerHTML = '';
+  SHOTS.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'shot-d queued';
+    card.id = `shot-${i}`;
+    card.innerHTML = `<span class="pill">QUEUED</span><span class="idx">SHOT ${String(i+1).padStart(2,'0')}</span>`;
+    grid.appendChild(card);
+  });
+}
+function setShot(i, status, clipUrl) {
+  const card = $(`shot-${i}`);
+  if (!card) return;
+  card.classList.remove('queued','rendering','done');
+  card.classList.add(status);
+  card.querySelector('.pill').textContent = status.toUpperCase();
+  if (status === 'done' && clipUrl) {
+    card.insertAdjacentHTML('afterbegin',
+      `<video src="${clipUrl}" muted autoplay loop playsinline></video>`);
+  }
+}
+
+async function runDemo() {
+  // ── Curtain → phone ringing ─────────────────────────────────
+  $('curtain').classList.add('gone');
+  setStatus('DIALING');
+  await sleep(450);
+  $('phone').classList.add('in');
+  await sleep(2200);
+  setStatus('CONNECTING');
+  $('answerLbl').textContent = 'ANSWERED ✓';
+  await sleep(900);
+
+  // Phone → call UI
+  $('phone').classList.add('out');
+  await sleep(450);
+  $('callui').classList.add('in');
+  setStatus('LIVE · ON THE CALL');
+  startTimer();
+  await sleep(450);
+
+  // ── Director greeting (silent, brief — no audio) ────────────
+  await appendLine('director', "Hey — Conduit here. What are we making?", 1400);
+  await sleep(550);
+
+  // ── User asks (Aura orion plays; reveal paced to match audio) ──
+  const userPlay = playAndWait(audUser);
+  await appendLine(
+    'user',
+    "Make me a thirty-second video about the south pole of the moon, with voiceover and facts.",
+    DUR.user,
+  );
+  await userPlay;            // hold here until orion fully ends
+  await sleep(450);
+
+  // ── Director responds (Aura asteria plays; same pattern) ────
+  const dirPlay = playAndWait(audDir1);
+  await appendLine(
+    'director',
+    "Got it. Six shots, narrated, locked in. Storyboard's coming up.",
+    DUR.director,
+  );
+  await dirPlay;             // hold until asteria fully ends
+  await sleep(350);
+
+  // ── Plan reveal — 6 shot cards appear as queued ─────────────
+  addShotCards();
+  setStatus('PLANNING');
+  await sleep(700);
+
+  // ── Orchestration phase: 7.71s of stella whisper, agents +
+  //    shot states animate in coordinated parallel work. We start
+  //    the audio, run all visual choreography, then await audio end.
+  setStatus('RENDERING · 6 AGENTS PARALLEL');
+  const orchPlay = playAndWait(audOrch);
+
+  // Agents activate over the first ~3.2s of the whisper
+  setAgent('director', true);   await sleep(800);
+  setAgent('storyboard', true); await sleep(800);
+  setAgent('cinema', true);     await sleep(800);
+  setAgent('voice', true);      await sleep(800);
+
+  // Shots flip to rendering quickly (the whisper is talking about
+  // parallelism — visually all 6 hit "rendering" within ~1.5s)
+  for (let i = 0; i < SHOTS.length; i++) {
+    setShot(i, 'rendering');
+    await sleep(220);
+  }
+
+  // Shots progressively complete with their actual clip thumbnails.
+  // Spread across remaining whisper time so completion lines up
+  // roughly with the end of the orch audio.
+  for (let i = 0; i < SHOTS.length; i++) {
+    setShot(i, 'done', SHOTS[i].clip);
+    await sleep(330);
+  }
+
+  await orchPlay;              // hold here until whisper truly ends
+  // belt-and-suspenders: kill ALL speech audio before stitching/reveal
+  // so absolutely nothing can leak through over the moon narration
+  [audUser, audDir1, audOrch].forEach(a => { a.pause(); a.currentTime = 0; });
+  await sleep(800);            // brief beat after the whisper
+
+  // ── Stitcher (longer beat — judges should *see* the work happen) ─
+  setAgent('stitch', true);
+  setStatus('STITCHING · LUT GRADE · CAPTIONS');
+  await sleep(3200);
+  setAgent('final', true);
+  setStatus('DELIVERED · STAND BY');
+  await sleep(1800);           // beat before the reveal
+
+  // ── Final video plays (its own per-shot Aura voice-over) ────
+  $('final').classList.add('in');
+  await sleep(700);             // longer cross-fade so audio doesn't crash in
+  $('finalVid').currentTime = 0;
+  $('finalVid').play();
+
+  $('finalVid').onended = () => {
+    $('restartBtn').classList.add('show');
+    stopTimer();
+  };
+}
+
+function reset() {
+  // reload page — simplest reliable reset
+  location.reload();
+}
+
+$('startBtn').onclick = runDemo;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && $('curtain') && !$('curtain').classList.contains('gone')) {
+    runDemo();
+  }
+  if (e.key === 'r' || e.key === 'R') reset();
+});
+$('restartBtn').onclick = reset;
+
+// preload final video for instant playback
+const preload = document.createElement('video');
+preload.src = '/videos/_demo_moon/final_clean.mp4';
+preload.preload = 'auto';
+</script>
+
+</body></html>"""
+
+
 INDEX_HTML = INDEX_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
+DEMO_HTML = DEMO_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
 CALL_HTML = CALL_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
 HOW_HTML = HOW_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
+
+
+
+# ─────────────────────────────────────────────────────────────────────
+# User Dashboard — /u/{token}
+# ─────────────────────────────────────────────────────────────────────
+
+@app.get("/u/{token}", response_class=HTMLResponse)
+def user_dashboard(token: str, request: Request):
+    user = db.get_user_by_token(token)
+    if not user:
+        return HTMLResponse("<html><body style='font-family:monospace;background:#060606;color:#f4f4f5;padding:40px'>"
+                            "<h2>Studio not found</h2><p>This link isn't valid. Call "
+                            "<a href='tel:+14434648118' style='color:#67e8f9'>+1 (443) 464-8118</a> "
+                            "and we'll text you your studio URL.</p></body></html>", status_code=404)
+    return _templates.TemplateResponse("user_dashboard.html", {"request": request, "token": token})
+
+
+@app.get("/api/u/{token}")
+def api_user(token: str):
+    user = db.get_user_by_token(token)
+    if not user:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    calls = db.get_calls_for_user(user["phone_e164"])
+    return {"user": dict(user), "calls": calls}
+
+
+@app.get("/api/u/{token}/active")
+def api_user_active(token: str):
+    user = db.get_user_by_token(token)
+    if not user:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    active = db.get_active_call(user["phone_e164"])
+    return {"active": active}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Post-call editor — reorder, overlay, AI improve prompt
+# ─────────────────────────────────────────────────────────────────────
+
+@app.post("/api/reorder/{call_id}")
+async def api_reorder(call_id: str, req: Request):
+    """Drag-to-reorder shots. Body: {"order": [2, 0, 1, 3]}"""
+    data = await req.json()
+    new_order = data.get("order", [])
+    sess = director.load_session(call_id)
+    if not sess:
+        return JSONResponse({"error": "session not found"}, status_code=404)
+    if len(new_order) != len(sess.shots):
+        return JSONResponse({"error": "order length mismatch"}, status_code=400)
+    sess.shots = [sess.shots[i] for i in new_order]
+    for j, shot in enumerate(sess.shots):
+        shot.index = j
+    director.dump_session(sess)
+    pipeline.emit("shots.reordered", {"call_id": call_id})
+    return {"ok": True}
+
+
+@app.post("/api/overlay/{call_id}")
+async def api_overlay(call_id: str, req: Request):
+    """Add/update text overlay on a shot. Body: {"shot_index": 0, "text": "Tesla", "position": "lower_third"}"""
+    data = await req.json()
+    shot_index = data.get("shot_index")
+    text = data.get("text", "").strip()
+    position = data.get("position", "lower_third")
+    sess = director.load_session(call_id)
+    if not sess:
+        return JSONResponse({"error": "session not found"}, status_code=404)
+    if shot_index is None or shot_index < 0 or shot_index >= len(sess.shots):
+        return JSONResponse({"error": "bad shot index"}, status_code=400)
+    shot = sess.shots[shot_index]
+    if not shot.clip_path:
+        return JSONResponse({"error": "shot not rendered yet"}, status_code=400)
+
+    import threading
+    def _apply_overlay():
+        try:
+            from pathlib import Path
+            src = Path(shot.clip_path)
+            out_dir = Path("videos") / call_id / "_overlays"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out = out_dir / f"overlay_{shot_index:02d}.mp4"
+            if text:
+                pipeline._make_caption_clip(src, text, out)
+            else:
+                import shutil
+                shutil.copy(src, out)
+            shot.clip_path = str(out)
+            director.dump_session(sess)
+            pipeline.emit("shot.overlay", {
+                "call_id": call_id, "shot_id": shot.id,
+                "clip_path": str(out), "text": text,
+            })
+        except Exception as e:
+            pipeline.emit("shot.overlay.error", {"call_id": call_id, "error": str(e)})
+
+    threading.Thread(target=_apply_overlay, daemon=True).start()
+    return {"ok": True, "message": f"Applying overlay to shot {shot_index + 1}…"}
+
+
+@app.post("/api/improve-prompt/{call_id}/{shot_index}")
+async def api_improve_prompt(call_id: str, shot_index: int, req: Request):
+    """Use Claude to improve a shot prompt. Body: {"current_prompt": "..."}"""
+    data = await req.json()
+    current_prompt = data.get("current_prompt", "").strip()
+    sess = director.load_session(call_id)
+    if not sess:
+        return JSONResponse({"error": "session not found"}, status_code=404)
+    if shot_index < 0 or shot_index >= len(sess.shots):
+        return JSONResponse({"error": "bad shot index"}, status_code=400)
+    shot = sess.shots[shot_index]
+    style_bible = sess.brief or "cinematic, premium, dark tone"
+    system = "You are a senior commercial film director. Improve the given shot prompt to be more visually specific, cinematic, and striking. Keep the same subject/action but upgrade the lens, lighting, camera move, and mood. Output ONLY the improved prompt text, nothing else."
+    user_msg = f"Style bible: {style_bible}\n\nShot intent: {shot.intent}\n\nCurrent prompt:\n{current_prompt or shot.prompt}\n\nImproved prompt:"
+    try:
+        improved = claude_client.chat(system, user_msg, max_tokens=400).strip()
+        return {"ok": True, "improved_prompt": improved}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":

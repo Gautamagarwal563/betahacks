@@ -31,6 +31,8 @@ from pydantic import BaseModel
 
 import director
 import pipeline
+import db
+import auth
 from director import Session, Shot, ShotStatus
 
 PUBLIC_URL = os.getenv("PUBLIC_URL", "http://localhost:8000")
@@ -41,9 +43,19 @@ app = FastAPI(title="Conduit Voice")
 sessions: dict[str, Session] = {}
 
 
-def _get_or_create(call_id: str) -> Session:
+def _get_or_create(call_id: str, phone: str | None = None) -> Session:
     if call_id not in sessions:
-        sessions[call_id] = Session(call_id=call_id)
+        sess = Session(call_id=call_id)
+        if phone:
+            sess.phone_e164 = auth.normalize_phone(phone)
+            user = db.upsert_user(phone)
+            sess.user_token = user["token"]
+        sessions[call_id] = sess
+    elif phone and not sessions[call_id].phone_e164:
+        sess = sessions[call_id]
+        sess.phone_e164 = auth.normalize_phone(phone)
+        user = db.upsert_user(phone)
+        sess.user_token = user["token"]
     return sessions[call_id]
 
 
@@ -57,12 +69,17 @@ def tool_plan_shots(session: Session, args: dict) -> dict:
     action = {"title": title, "brief": brief, "shots": raw_shots}
     new_shots = director.apply_plan(session, action)
     pipeline.render_shots(session, new_shots)
+    if session.user_token:
+        watch_url = f"{PUBLIC_URL}/u/{session.user_token}"
+        msg = f"Planned {len(new_shots)} shots. Rendering now. Watch at {PUBLIC_URL}/u/{session.user_token}"
+    else:
+        watch_url = f"{PUBLIC_URL}/call/{session.call_id}"
+        msg = f"Planned {len(new_shots)} shots. Rendering now. Watch at {watch_url}"
     return {
         "ok": True,
-        "message": f"Planned {len(new_shots)} shots. Rendering now. "
-                   f"Watch at {PUBLIC_URL}/call/{session.call_id}",
+        "message": msg,
         "shot_count": len(new_shots),
-        "dashboard_url": f"{PUBLIC_URL}/call/{session.call_id}",
+        "dashboard_url": watch_url,
     }
 
 
@@ -120,7 +137,8 @@ async def vapi_webhook(req: Request):
 
     call = msg.get("call") or {}
     call_id = call.get("id") or msg.get("callId") or "dev-call"
-    session = _get_or_create(call_id)
+    phone = (call.get("customer") or {}).get("number") or msg.get("customer", {}).get("number")
+    session = _get_or_create(call_id, phone)
 
     # Log transcript updates
     if msg_type == "transcript":
