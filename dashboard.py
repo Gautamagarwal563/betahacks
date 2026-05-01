@@ -748,6 +748,7 @@ __BASE_STYLE__
   <a href="/" class="brand" style="text-decoration:none"><span class="glyph"></span>CONDUIT</a>
   <div style="display:flex; gap: 12px; align-items: center;">
     <a href="/how" class="nav-chip">How it works</a>
+    <a href="/login" class="nav-chip" style="color: var(--accent); border-color: rgba(103,232,249,0.25);">My Studio →</a>
     <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118 · live</a>
   </div>
 </div></nav>
@@ -1272,12 +1273,13 @@ __BASE_STYLE__
   <a href="/" class="brand" style="text-decoration:none"><span class="glyph"></span>CONDUIT</a>
   <div style="display:flex; gap: 12px; align-items: center;">
     <a href="/how" class="nav-chip">How it works</a>
+    <a href="/login" class="nav-chip" style="color: var(--accent); border-color: rgba(103,232,249,0.25);">My Studio →</a>
     <a class="phone-cta" href="tel:+14434648118"><span class="pulse"></span>+1 (443) 464-8118 · live</a>
   </div>
 </div></nav>
 
 <div class="wrap">
-  <div class="back-row"><a href="/">← all calls</a></div>
+  <div class="back-row"><a href="/login">← my studio</a></div>
 
   <section class="call-header">
     <div>
@@ -2744,6 +2746,27 @@ HOW_HTML = HOW_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
 # ─────────────────────────────────────────────────────────────────────
 # User Dashboard — /u/{token}
 # ─────────────────────────────────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return _templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/api/login")
+async def api_login(req: Request):
+    """Phone number → redirect to /u/{token}. Creates user if first visit."""
+    data = await req.json()
+    phone = (data.get("phone") or "").strip()
+    if not phone:
+        return JSONResponse({"error": "phone required"}, status_code=400)
+    import auth as _auth
+    normalized = _auth.normalize_phone(phone)
+    if len(normalized.replace("+", "").replace(" ", "")) < 10:
+        return JSONResponse({"error": "invalid phone number"}, status_code=400)
+    # check if user exists; if not, still create (they might be calling for the first time)
+    user = db.upsert_user(normalized)
+    return {"redirect": f"/u/{user['token']}"}
+
 
 @app.get("/u/{token}", response_class=HTMLResponse)
 def user_dashboard(token: str, request: Request):

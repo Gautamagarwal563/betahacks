@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#060606">
+<title>Conduit — My Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #060606;
+    --surface: #0e0e10;
+    --surface-2: #15151a;
+    --border: rgba(255,255,255,0.06);
+    --border-2: rgba(255,255,255,0.12);
+    --text: #f4f4f5;
+    --text-2: #a1a1aa;
+    --text-3: #71717a;
+    --accent: #67e8f9;
+    --accent-glow: rgba(103,232,249,0.35);
+    --success: #4ade80;
+    --danger: #f87171;
+    --serif: 'Instrument Serif', ui-serif, Georgia, serif;
+    --sans: 'Geist', system-ui, sans-serif;
+    --mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+  }
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-image:
+      radial-gradient(900px circle at 30% 40%, rgba(103,232,249,0.05), transparent 60%),
+      radial-gradient(700px circle at 80% 60%, rgba(168,85,247,0.04), transparent 60%);
+  }
+  a { color: var(--accent); text-decoration: none; }
+
+  @keyframes breathe {
+    0%,100% { box-shadow: 0 0 0 3px var(--accent-glow), 0 0 18px var(--accent-glow); }
+    50%     { box-shadow: 0 0 0 5px var(--accent-glow), 0 0 24px var(--accent-glow); }
+  }
+
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(12px);
+    background: rgba(6,6,6,0.72);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .inner {
+    max-width: 1240px; margin: 0 auto; padding: 14px 28px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand {
+    font-family: var(--mono); font-weight: 600; font-size: 13px;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--text);
+    text-decoration: none; display: flex; align-items: center; gap: 8px;
+  }
+  .glyph {
+    display: inline-block; width: 9px; height: 9px;
+    background: var(--accent); border-radius: 50%;
+    box-shadow: 0 0 0 3px var(--accent-glow), 0 0 18px var(--accent-glow);
+    animation: breathe 2.6s ease-in-out infinite;
+  }
+
+  main {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 40px 24px;
+  }
+
+  .card {
+    width: 100%; max-width: 440px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 40px 80px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03);
+  }
+
+  .card .eyebrow {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--accent);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 18px;
+  }
+  .card .eyebrow::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+  }
+
+  .card h1 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: 34px; line-height: 1.1; letter-spacing: -0.02em;
+    margin: 0 0 6px; color: var(--text);
+  }
+  .card h1 em { font-style: italic; color: var(--accent); }
+  .card .sub {
+    font-size: 14px; color: var(--text-2); margin: 0 0 32px; line-height: 1.5;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3);
+    margin-bottom: 8px;
+  }
+  .field input {
+    width: 100%; padding: 14px 16px;
+    background: var(--surface-2); border: 1px solid var(--border-2);
+    color: var(--text); border-radius: 10px; outline: none;
+    font-family: var(--mono); font-size: 18px; letter-spacing: 0.04em;
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  .field input::placeholder { color: var(--text-3); font-size: 15px; }
+  .field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(103,232,249,0.12);
+  }
+
+  .error {
+    font-family: var(--mono); font-size: 12px; color: var(--danger);
+    margin-bottom: 14px; display: none; align-items: center; gap: 6px;
+  }
+  .error.show { display: flex; }
+
+  .submit-btn {
+    width: 100%; padding: 15px;
+    background: var(--accent); color: #000;
+    border: none; border-radius: 10px; cursor: pointer;
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    transition: all .18s ease; display: flex; align-items: center;
+    justify-content: center; gap: 8px;
+  }
+  .submit-btn:hover { background: var(--text); transform: translateY(-1px); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .divider {
+    text-align: center; font-family: var(--mono); font-size: 11px;
+    color: var(--text-3); margin: 24px 0; letter-spacing: 0.1em;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .divider::before, .divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  .new-call {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 14px; border-radius: 10px;
+    background: transparent; border: 1px solid var(--border-2);
+    font-family: var(--mono); font-size: 16px; color: var(--text);
+    transition: all .18s ease; text-decoration: none;
+  }
+  .new-call:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+  .new-call .pulse {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--success);
+    box-shadow: 0 0 0 3px rgba(74,222,128,0.25);
+    animation: pulseGreen 1.8s ease-in-out infinite;
+  }
+  @keyframes pulseGreen {
+    0%,100% { box-shadow: 0 0 0 3px rgba(74,222,128,0.2); }
+    50%     { box-shadow: 0 0 0 5px rgba(74,222,128,0.35), 0 0 14px rgba(74,222,128,0.4); }
+  }
+
+  .footer-note {
+    margin-top: 24px; text-align: center;
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<nav><div class="inner">
+  <a href="/" class="brand"><span class="glyph"></span>CONDUIT</a>
+</div></nav>
+
+<main>
+  <div class="card">
+    <div class="eyebrow">Your Studio</div>
+    <h1>Sign in to<br><em>your films</em></h1>
+    <p class="sub">Enter the phone number you called from. We'll open your personal studio — no password needed.</p>
+
+    <div class="field">
+      <label>Phone number</label>
+      <input type="tel" id="phone" placeholder="+1 (443) 000-0000" autocomplete="tel" autofocus>
+    </div>
+
+    <div class="error" id="error">
+      <span>⚠</span> <span id="error-msg">No studio found for that number. Try calling first.</span>
+    </div>
+
+    <button class="submit-btn" id="submit-btn" onclick="login()">
+      <span id="btn-label">Open my studio</span>
+      <span id="btn-arrow">→</span>
+    </button>
+
+    <div class="divider">or</div>
+
+    <a class="new-call" href="tel:+14434648118">
+      <span class="pulse"></span>
+      Call to make your first film
+    </a>
+
+    <div class="footer-note">
+      First time? Call <strong style="color:var(--text-2)">+1 (443) 464-8118</strong>.<br>
+      The director gives you your studio link during the call.
+    </div>
+  </div>
+</main>
+
+<script>
+const input = document.getElementById('phone');
+
+// auto-format phone as user types
+input.addEventListener('input', () => {
+  let v = input.value.replace(/\D/g, '');
+  if (v.length > 11) v = v.slice(0, 11);
+  // format
+  if (v.length === 0) { input.value = ''; return; }
+  if (v.length <= 3) { input.value = v; return; }
+  if (v.length <= 6) { input.value = v.slice(0,3) + '-' + v.slice(3); return; }
+  if (v.length <= 10) {
+    input.value = '(' + v.slice(0,3) + ') ' + v.slice(3,6) + '-' + v.slice(6);
+    return;
+  }
+  // 11 digits — with country code
+  input.value = '+' + v[0] + ' (' + v.slice(1,4) + ') ' + v.slice(4,7) + '-' + v.slice(7);
+});
+
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+
+async function login() {
+  const raw = input.value.replace(/\D/g, '');
+  if (raw.length < 10) {
+    showError('Please enter a valid phone number.');
+    return;
+  }
+  const phone = raw.length === 10 ? '+1' + raw : '+' + raw;
+  const btn = document.getElementById('submit-btn');
+  const lbl = document.getElementById('btn-label');
+  const err = document.getElementById('error');
+  btn.disabled = true;
+  lbl.textContent = 'Looking up…';
+  err.classList.remove('show');
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ phone })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.redirect) {
+      showError(d.error || 'No studio found for that number. Try calling first.');
+      return;
+    }
+    window.location.href = d.redirect;
+  } catch(e) {
+    showError('Something went wrong. Try again.');
+  } finally {
+    btn.disabled = false;
+    lbl.textContent = 'Open my studio';
+  }
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  document.getElementById('error').classList.add('show');
+  input.focus();
+}
+</script>
+</body></html>
