@@ -2749,7 +2749,7 @@ HOW_HTML = HOW_HTML.replace("__BASE_STYLE__", _BASE_STYLE)
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return _templates.TemplateResponse("login.html", {"request": request})
+    return _templates.TemplateResponse(request, "login.html")
 
 
 @app.post("/api/login")
@@ -2776,7 +2776,7 @@ def user_dashboard(token: str, request: Request):
                             "<h2>Studio not found</h2><p>This link isn't valid. Call "
                             "<a href='tel:+14434648118' style='color:#67e8f9'>+1 (443) 464-8118</a> "
                             "and we'll text you your studio URL.</p></body></html>", status_code=404)
-    return _templates.TemplateResponse("user_dashboard.html", {"request": request, "token": token})
+    return _templates.TemplateResponse(request, "user_dashboard.html", {"token": token})
 
 
 @app.get("/api/u/{token}")
