@@ -576,6 +576,7 @@ async function generate() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Generation failed');
     currentCallId = d.call_id;
+    sessionStorage.setItem('med_call_id', d.call_id);
     document.getElementById('prog-title').textContent = d.title || 'Generating…';
     document.getElementById('prog-summary').textContent = d.summary || '';
     renderShotCards(d.shots || []);
@@ -653,18 +654,8 @@ function subscribeSSE(callId) {
   });
 
   es.addEventListener('session.finalized', async () => {
-    setStatus('Stitching final video…');
-    // trigger finalize
-    try {
-      const r = await fetch(`/api/finalize/${callId}`, { method: 'POST' });
-      const d = await r.json();
-      if (r.ok) {
-        setTimeout(async () => {
-          const rs = await fetch('/api/session/' + callId);
-          if (rs.ok) applySnapshot(await rs.json());
-        }, 1000);
-      }
-    } catch(e) {}
+    setStatus('Finalizing video…');
+    startPollForFinal(callId);
   });
 }
 
@@ -689,9 +680,12 @@ function applySnapshot(snap) {
     showResult(snap.title, snap.summary || snap.brief || '', `/videos/${snap.call_id}/${fname}`, snap.call_id);
     es && es.close();
     resetBtn();
-  } else if (done === total && total > 0) {
-    setStatus('All shots done — stitching…');
-    startPollForFinal(snap.call_id);
+  } else {
+    const finished = shots.filter(s => s.status === 'done' || s.status === 'failed').length;
+    if (finished === total && total > 0 && done > 0) {
+      setStatus('All shots done — stitching…');
+      startPollForFinal(snap.call_id);
+    }
   }
 }
 
@@ -764,6 +758,7 @@ async function sendToPatient() {
 }
 
 function generateNew() {
+  sessionStorage.removeItem('med_call_id');
   document.getElementById('result-wrap').classList.remove('show');
   document.getElementById('progress-wrap').classList.remove('show');
   document.getElementById('procedure').focus();
@@ -783,5 +778,25 @@ function showError(msg) {
   el.textContent = '⚠ ' + msg;
   el.classList.add('show');
 }
+
+// restore in-progress session after refresh
+(function init() {
+  const saved = sessionStorage.getItem('med_call_id');
+  if (!saved) return;
+  currentCallId = saved;
+  fetch('/api/session/' + saved).then(r => r.ok ? r.json() : null).then(snap => {
+    if (!snap) return;
+    if (snap.final_video_path) {
+      const fname = snap.final_video_path.split('/').pop();
+      showResult(snap.title, snap.summary || snap.brief || '', '/videos/' + snap.call_id + '/' + fname, snap.call_id);
+    } else {
+      document.getElementById('progress-wrap').classList.add('show');
+      document.getElementById('form-section').style.display = 'none';
+      renderShotCards(snap.shots || []);
+      applySnapshot(snap);
+      subscribeSSE(saved);
+    }
+  }).catch(() => {});
+})();
 </script>
 </body></html>

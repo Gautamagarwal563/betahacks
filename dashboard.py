@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading as _threading
 import uuid
 from pathlib import Path
 
@@ -27,7 +28,19 @@ import pipeline
 import db
 import claude_client
 
-app = FastAPI(title="Conduit Dashboard")
+from contextlib import asynccontextmanager
+
+_event_loop: asyncio.AbstractEventLoop | None = None
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    global _event_loop
+    _event_loop = asyncio.get_running_loop()
+    yield
+
+
+app = FastAPI(title="Conduit Dashboard", lifespan=_lifespan)
 
 from fastapi.templating import Jinja2Templates
 _templates = Jinja2Templates(directory="templates")
@@ -46,11 +59,15 @@ def _publish(event: str, data: dict) -> None:
     call_id = data.get("call_id")
     if not call_id:
         return
-    for q in _queues.get(call_id, []):
-        try:
-            q.put_nowait({"event": event, "data": json.dumps(data)})
-        except Exception:
-            pass
+    payload = {"event": event, "data": json.dumps(data)}
+    for q in list(_queues.get(call_id, [])):
+        if _event_loop and _event_loop.is_running():
+            _event_loop.call_soon_threadsafe(q.put_nowait, payload)
+        else:
+            try:
+                q.put_nowait(payload)
+            except Exception:
+                pass
 
 
 pipeline.subscribe(_publish)
