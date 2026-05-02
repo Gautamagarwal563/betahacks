@@ -327,7 +327,7 @@ def _make_caption_clip(src: Path, caption: str, out: Path) -> Path:
             "-map", "0:v:0", "-map", "0:a?",
             "-vf", GRADE_VF,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "44100",
             "-pix_fmt", "yuv420p", "-r", "30",
             str(out),
         ], check=True, capture_output=True)
@@ -340,7 +340,7 @@ def _make_caption_clip(src: Path, caption: str, out: Path) -> Path:
             f"[0:v]{GRADE_VF}[v];[v][1:v]overlay=0:main_h-160:format=auto",
         "-map", "0:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "44100",
         "-pix_fmt", "yuv420p", "-r", "30",
         str(out),
     ], check=True, capture_output=True)
@@ -490,11 +490,13 @@ def finalize(session: Session) -> Path:
             _make_caption_clip(src, s.narration.strip(), dst)
         else:
             # re-encode with consistent params so concat works cleanly
+            # -map 0:a? preserves audio if present; -ac 2 -ar 44100 normalizes to stereo 44.1kHz
             subprocess.run([
                 "ffmpeg", "-y", "-i", str(src),
-                "-map", "0:v:0",
+                "-map", "0:v:0", "-map", "0:a?",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-r", "30",
+                "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "44100",
                 str(dst),
             ], check=True, capture_output=True)
         processed_clips.append(dst)
@@ -524,7 +526,7 @@ def finalize(session: Session) -> Path:
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(clips_txt),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p", "-r", "30",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "44100",
         str(final),
     ], check=True, capture_output=True)
 

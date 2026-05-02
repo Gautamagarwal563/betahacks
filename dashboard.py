@@ -2939,8 +2939,19 @@ async def api_medical_generate(req: Request):
 
     director.dump_session(sess)
 
-    # 3. Kick off async render (non-blocking)
-    pipeline.render_shots(sess, sess.shots)
+    # 3. Kick off render + auto-stitch in a background thread
+    import threading
+
+    def _render_and_stitch(s):
+        pipeline.render_shots(s, s.shots)
+        pipeline.wait_all(s)
+        try:
+            pipeline.finalize(s)
+            director.dump_session(s)
+        except Exception as e:
+            print(f"[medical] finalize error for {s.call_id}: {e}")
+
+    threading.Thread(target=_render_and_stitch, args=(sess,), daemon=True).start()
 
     return {
         "ok": True,
