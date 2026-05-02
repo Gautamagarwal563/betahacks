@@ -691,7 +691,28 @@ function applySnapshot(snap) {
     resetBtn();
   } else if (done === total && total > 0) {
     setStatus('All shots done — stitching…');
+    startPollForFinal(snap.call_id);
   }
+}
+
+let _pollTimer = null;
+function startPollForFinal(callId) {
+  if (_pollTimer) return; // already polling
+  _pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/session/' + callId);
+      if (!r.ok) return;
+      const snap = await r.json();
+      if (snap.final_video_path) {
+        clearInterval(_pollTimer);
+        _pollTimer = null;
+        const fname = snap.final_video_path.split('/').pop();
+        showResult(snap.title, snap.summary || snap.brief || '', `/videos/${snap.call_id}/${fname}`, snap.call_id);
+        es && es.close();
+        resetBtn();
+      }
+    } catch(e) {}
+  }, 2000);
 }
 
 function showResult(title, summary, videoUrl, callId) {
