@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#060a14">
+<title>Conduit Medical — Patient Education Videos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #060a14;
+    --surface: #0b1120;
+    --surface-2: #111827;
+    --border: rgba(147,197,253,0.08);
+    --border-2: rgba(147,197,253,0.16);
+    --text: #f0f6ff;
+    --text-2: #94a3b8;
+    --text-3: #4b6a8a;
+    --accent: #60a5fa;
+    --accent-glow: rgba(96,165,250,0.3);
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --serif: 'Instrument Serif', ui-serif, Georgia, serif;
+    --sans: 'Geist', system-ui, sans-serif;
+    --mono: 'Geist Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(800px circle at 20% 0%, rgba(96,165,250,0.06), transparent 60%),
+      radial-gradient(600px circle at 80% 80%, rgba(52,211,153,0.04), transparent 60%);
+  }
+  a { color: var(--accent); text-decoration: none; }
+
+  @keyframes breathe {
+    0%,100% { box-shadow: 0 0 0 3px rgba(96,165,250,0.2), 0 0 16px rgba(96,165,250,0.3); }
+    50%      { box-shadow: 0 0 0 5px rgba(96,165,250,0.3), 0 0 24px rgba(96,165,250,0.4); }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes shotIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+  /* NAV */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(16px);
+    background: rgba(6,10,20,0.8);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .inner {
+    max-width: 1100px; margin: 0 auto; padding: 14px 28px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .brand {
+    font-family: var(--mono); font-weight: 600; font-size: 13px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--text);
+    display: flex; align-items: center; gap: 10px; text-decoration: none;
+  }
+  .brand .cross {
+    width: 18px; height: 18px; position: relative; flex-shrink: 0;
+  }
+  .brand .cross::before, .brand .cross::after {
+    content: ''; position: absolute; background: var(--accent); border-radius: 2px;
+  }
+  .brand .cross::before { width: 3px; height: 100%; left: 50%; transform: translateX(-50%); }
+  .brand .cross::after  { height: 3px; width: 100%; top: 50%; transform: translateY(-50%); }
+  .brand .sep {
+    color: var(--text-3); font-size: 11px; letter-spacing: 0.08em;
+    border-left: 1px solid var(--border-2); padding-left: 10px;
+    text-transform: none; font-weight: 400;
+  }
+  .nav-badge {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--success);
+    background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.2);
+    padding: 4px 10px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .nav-badge::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(52,211,153,0.2);
+    animation: breatheGreen 1.8s infinite;
+  }
+  @keyframes breatheGreen {
+    0%,100% { box-shadow: 0 0 0 2px rgba(52,211,153,0.15); }
+    50%      { box-shadow: 0 0 0 4px rgba(52,211,153,0.3), 0 0 12px rgba(52,211,153,0.3); }
+  }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 28px 80px; }
+
+  /* HERO */
+  .hero { padding: 0 0 52px; border-bottom: 1px solid var(--border); }
+  .hero .eyebrow {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .hero .eyebrow::before {
+    content: ''; display: inline-block; width: 24px; height: 1px; background: var(--accent);
+  }
+  .hero h1 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(38px, 5vw, 64px); line-height: 1.05;
+    letter-spacing: -0.02em; margin: 0 0 14px; color: var(--text);
+  }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero .sub {
+    font-size: 16px; color: var(--text-2); max-width: 580px; line-height: 1.6; margin: 0 0 32px;
+  }
+  .stats-row {
+    display: flex; gap: 32px; flex-wrap: wrap;
+  }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat .n {
+    font-family: var(--serif); font-size: 28px; line-height: 1; letter-spacing: -0.02em; color: var(--text);
+  }
+  .stat .l { font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-3); }
+
+  /* FORM */
+  .form-section { padding: 48px 0 0; }
+  .form-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: 8px; }
+  .field.span2 { grid-column: 1 / -1; }
+  .field label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--text-3); font-weight: 500;
+  }
+  .field label .req { color: var(--accent); margin-left: 3px; }
+
+  .field input, .field select, .field textarea {
+    background: var(--surface); border: 1px solid var(--border-2);
+    color: var(--text); padding: 13px 16px; border-radius: 10px;
+    font-family: var(--sans); font-size: 14px; outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  .field textarea { resize: vertical; min-height: 80px; }
+  .field input::placeholder, .field textarea::placeholder { color: var(--text-3); }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.1);
+  }
+  .field select option { background: var(--surface-2); }
+
+  /* voice input toggle */
+  .voice-row {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .voice-row input { flex: 1; }
+  .mic-btn {
+    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+    background: var(--surface); border: 1px solid var(--border-2);
+    color: var(--text-2); cursor: pointer; display: flex; align-items: center;
+    justify-content: center; font-size: 18px; transition: all .18s ease;
+  }
+  .mic-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .mic-btn.recording {
+    background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.4);
+    color: var(--danger); animation: breatheRed 1s infinite;
+  }
+  @keyframes breatheRed {
+    0%,100% { box-shadow: 0 0 0 2px rgba(248,113,113,0.15); }
+    50%      { box-shadow: 0 0 0 5px rgba(248,113,113,0.25), 0 0 14px rgba(248,113,113,0.3); }
+  }
+
+  .generate-btn {
+    width: 100%; padding: 16px;
+    background: var(--accent); color: #000;
+    border: none; border-radius: 12px; cursor: pointer;
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    transition: all .18s ease; display: flex; align-items: center;
+    justify-content: center; gap: 10px; margin-top: 8px;
+  }
+  .generate-btn:hover { background: var(--text); transform: translateY(-1px); }
+  .generate-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* PROGRESS */
+  .progress-wrap {
+    display: none; margin-top: 40px; padding: 28px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; animation: fadeUp .3s ease;
+  }
+  .progress-wrap.show { display: block; }
+  .progress-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px; gap: 16px; flex-wrap: wrap;
+  }
+  .progress-title {
+    font-family: var(--serif); font-size: 22px; letter-spacing: -0.01em; color: var(--text);
+  }
+  .progress-status {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--text-3);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid rgba(96,165,250,0.2);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* shot progress grid */
+  .shots-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;
+    margin-bottom: 20px;
+  }
+  .shot-card {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+    animation: shotIn .3s ease both;
+  }
+  .shot-card .thumb {
+    aspect-ratio: 16/9; background: #000; position: relative; overflow: hidden;
+  }
+  .shot-card .thumb img, .shot-card .thumb video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .shot-card .thumb .skel {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, #111827, #0b1120);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shot-card .thumb .skel::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(96,165,250,0.06), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+  .shot-card .pill {
+    position: absolute; bottom: 6px; left: 6px;
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px;
+    background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(6px); color: var(--text-2);
+  }
+  .shot-card .pill.rendering { color: var(--warning); border-color: rgba(251,191,36,0.3); }
+  .shot-card .pill.done { color: var(--success); border-color: rgba(52,211,153,0.3); }
+  .shot-card .pill.keyframe { color: #a5b4fc; border-color: rgba(165,180,252,0.3); }
+  .shot-card .caption {
+    padding: 8px 10px 10px;
+    font-size: 11px; color: var(--text-2); line-height: 1.4;
+  }
+
+  /* overall progress bar */
+  .prog-bar-wrap {
+    height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden;
+  }
+  .prog-bar {
+    height: 100%; background: var(--accent); border-radius: 2px;
+    transition: width .5s ease; width: 0%;
+  }
+  .prog-label {
+    font-family: var(--mono); font-size: 11px; color: var(--text-3);
+    margin-top: 8px; letter-spacing: 0.04em;
+  }
+
+  /* RESULT */
+  .result-wrap {
+    display: none; margin-top: 32px;
+    animation: fadeUp .4s ease;
+  }
+  .result-wrap.show { display: block; }
+  .result-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+  }
+  .result-header .check {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .result-header h2 {
+    font-family: var(--serif); font-weight: 400; font-size: 26px;
+    letter-spacing: -0.01em; margin: 0; color: var(--text);
+  }
+  .result-header .sub { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+  .video-frame {
+    border-radius: 14px; overflow: hidden; border: 1px solid var(--border-2);
+    background: #000; margin-bottom: 20px;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.03);
+  }
+  .video-frame video { width: 100%; display: block; max-height: 500px; }
+  .result-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em;
+    padding: 11px 18px; border-radius: 10px;
+    background: var(--surface-2); border: 1px solid var(--border-2);
+    color: var(--text); cursor: pointer; transition: all .18s ease;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+  .btn.primary:hover { background: var(--text); color: #000; }
+
+  .send-section {
+    margin-top: 20px; padding: 20px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px;
+  }
+  .send-section .label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--text-3); margin-bottom: 10px;
+  }
+  .send-row { display: flex; gap: 10px; }
+  .send-row input {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--border-2);
+    color: var(--text); padding: 11px 14px; border-radius: 8px;
+    font-family: var(--sans); font-size: 14px; outline: none;
+    transition: border-color .18s;
+  }
+  .send-row input:focus { border-color: var(--accent); }
+  .send-row input::placeholder { color: var(--text-3); }
+
+  .error-msg {
+    margin-top: 16px; padding: 14px 16px;
+    background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.2);
+    border-radius: 10px; font-family: var(--mono); font-size: 12px; color: var(--danger);
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  /* EXAMPLES */
+  .examples { margin-top: 48px; }
+  .examples h3 {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--text-3); margin: 0 0 14px;
+  }
+  .example-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .example-chip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; cursor: pointer;
+    transition: all .18s ease; text-align: left;
+  }
+  .example-chip:hover { border-color: var(--accent); background: rgba(96,165,250,0.04); }
+  .example-chip .proc { font-size: 14px; color: var(--text); margin-bottom: 4px; }
+  .example-chip .ctx { font-size: 12px; color: var(--text-3); line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<nav><div class="inner">
+  <a href="/medical" class="brand">
+    <span class="cross"></span>
+    CONDUIT
+    <span class="sep">Medical</span>
+  </a>
+  <span class="nav-badge">Patient Education</span>
+</div></nav>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow">For clinicians</div>
+    <h1>Patient education videos,<br><em>in two minutes.</em></h1>
+    <p class="sub">Describe the procedure and your patient. Conduit generates a plain-language animated explainer video you can text directly to them — before the appointment, after the diagnosis, or in the waiting room.</p>
+    <div class="stats-row">
+      <div class="stat"><div class="n">$50K</div><div class="l">Avg. agency video cost</div></div>
+      <div class="stat"><div class="n">~2min</div><div class="l">Conduit generates in</div></div>
+      <div class="stat"><div class="n">800M+</div><div class="l">US consultations/year</div></div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-grid">
+
+      <div class="field">
+        <label>Procedure or diagnosis <span class="req">*</span></label>
+        <div class="voice-row">
+          <input type="text" id="procedure"
+            placeholder="e.g. Knee replacement, chemotherapy, diabetes management"
+            autocomplete="off">
+          <button class="mic-btn" id="proc-mic" title="Speak procedure" onclick="startVoice('procedure', 'proc-mic')">🎤</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Patient language</label>
+        <select id="language">
+          <option value="English">English</option>
+          <option value="Spanish">Spanish (Español)</option>
+          <option value="Mandarin Chinese">Mandarin Chinese (普通话)</option>
+          <option value="French">French (Français)</option>
+          <option value="Arabic">Arabic (العربية)</option>
+          <option value="Hindi">Hindi (हिंदी)</option>
+          <option value="Portuguese">Portuguese (Português)</option>
+          <option value="Russian">Russian (Русский)</option>
+          <option value="Japanese">Japanese (日本語)</option>
+          <option value="Korean">Korean (한국어)</option>
+        </select>
+      </div>
+
+      <div class="field span2">
+        <label>Patient context <span class="req">*</span></label>
+        <div class="voice-row">
+          <textarea id="context" rows="3"
+            placeholder="e.g. 52-year-old woman, anxious about general anesthesia, has two teenage kids, physically active before injury"></textarea>
+          <button class="mic-btn" id="ctx-mic" title="Speak context" onclick="startVoice('context', 'ctx-mic')">🎤</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Tone</label>
+        <select id="tone">
+          <option value="reassuring and warm">Reassuring &amp; warm</option>
+          <option value="clinical and precise">Clinical &amp; precise</option>
+          <option value="friendly and conversational">Friendly &amp; conversational</option>
+          <option value="empowering and motivational">Empowering &amp; motivational</option>
+        </select>
+      </div>
+
+      <div class="field" style="justify-content: flex-end;">
+        <label>&nbsp;</label>
+        <button class="generate-btn" id="gen-btn" onclick="generate()">
+          <span id="gen-label">Generate patient video</span>
+          <span id="gen-icon">→</span>
+        </button>
+      </div>
+
+    </div>
+
+    <div class="error-msg" id="error-msg"></div>
+
+    <!-- progress -->
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-head">
+        <div>
+          <div class="progress-title" id="prog-title">Preparing your video…</div>
+          <div style="font-size:13px; color:var(--text-2); margin-top:4px" id="prog-summary"></div>
+        </div>
+        <div class="progress-status">
+          <div class="spinner" id="prog-spinner"></div>
+          <span id="prog-status-label">Planning shots…</span>
+        </div>
+      </div>
+      <div class="shots-grid" id="shots-grid"></div>
+      <div class="prog-bar-wrap"><div class="prog-bar" id="prog-bar"></div></div>
+      <div class="prog-label" id="prog-label">Initialising…</div>
+    </div>
+
+    <!-- result -->
+    <div class="result-wrap" id="result-wrap">
+      <div class="result-header">
+        <div class="check">✓</div>
+        <div>
+          <h2 id="result-title">Video ready</h2>
+          <div class="sub" id="result-summary"></div>
+        </div>
+      </div>
+      <div class="video-frame">
+        <video id="result-video" controls playsinline preload="metadata"></video>
+      </div>
+      <div class="result-actions">
+        <a class="btn primary" id="download-btn" href="#" download>↓ Download MP4</a>
+        <button class="btn" onclick="copyLink()">⎘ Copy link</button>
+        <button class="btn" onclick="generateNew()">+ New video</button>
+      </div>
+      <div class="send-section">
+        <div class="label">Send link to patient</div>
+        <div class="send-row">
+          <input type="tel" id="patient-phone" placeholder="+1 (555) 000-0000">
+          <button class="btn primary" onclick="sendToPatient()">Send via SMS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- examples -->
+    <div class="examples">
+      <h3>Quick examples — click to fill</h3>
+      <div class="example-grid">
+        <button class="example-chip" onclick="fillExample('Knee replacement surgery', '52-year-old woman, anxious about anesthesia, physically active, has two kids', 'English', 'reassuring and warm')">
+          <div class="proc">Knee Replacement</div>
+          <div class="ctx">52F · anxious about anesthesia · active lifestyle</div>
+        </button>
+        <button class="example-chip" onclick="fillExample('Type 2 diabetes management', '67-year-old man, recently diagnosed, skeptical about medication, retired teacher', 'English', 'friendly and conversational')">
+          <div class="proc">Type 2 Diabetes</div>
+          <div class="ctx">67M · newly diagnosed · medication hesitant</div>
+        </button>
+        <button class="example-chip" onclick="fillExample('Chemotherapy treatment', '45-year-old woman, breast cancer, mother of young children, very scared', 'Spanish', 'reassuring and warm')">
+          <div class="proc">Chemotherapy</div>
+          <div class="ctx">45F · breast cancer · Spanish-speaking · scared</div>
+        </button>
+        <button class="example-chip" onclick="fillExample('Colonoscopy preparation and procedure', '58-year-old man, first colonoscopy, embarrassed to ask questions', 'English', 'friendly and conversational')">
+          <div class="proc">Colonoscopy</div>
+          <div class="ctx">58M · first time · too embarrassed to ask</div>
+        </button>
+        <button class="example-chip" onclick="fillExample('Heart stent placement (angioplasty)', '71-year-old woman, heart disease, lives alone, worried about recovery', 'English', 'reassuring and warm')">
+          <div class="proc">Heart Stent (Angioplasty)</div>
+          <div class="ctx">71F · heart disease · lives alone · recovery concerns</div>
+        </button>
+        <button class="example-chip" onclick="fillExample('Hip replacement surgery', '63-year-old man, speaks Mandarin, brought his adult daughter to translate', 'Mandarin Chinese', 'reassuring and warm')">
+          <div class="proc">Hip Replacement</div>
+          <div class="ctx">63M · Mandarin-speaking · family present</div>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentCallId = null;
+let es = null;
+
+// ── Voice input ────────────────────────────────────────────────────────────
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let activeRec = null;
+
+function startVoice(fieldId, btnId) {
+  if (!SR) { alert('Voice input not supported in this browser. Use Chrome.'); return; }
+  const field = document.getElementById(fieldId);
+  const btn   = document.getElementById(btnId);
+  if (activeRec) { activeRec.stop(); return; }
+  const rec = new SR();
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.lang = 'en-US';
+  rec.onstart = () => { btn.classList.add('recording'); btn.textContent = '⏹'; activeRec = rec; };
+  rec.onresult = (e) => {
+    const txt = e.results[0][0].transcript;
+    if (field.tagName === 'TEXTAREA') field.value += (field.value ? ' ' : '') + txt;
+    else field.value = txt;
+  };
+  rec.onend = () => { btn.classList.remove('recording'); btn.textContent = '🎤'; activeRec = null; };
+  rec.onerror = () => { btn.classList.remove('recording'); btn.textContent = '🎤'; activeRec = null; };
+  rec.start();
+}
+
+// ── Fill examples ──────────────────────────────────────────────────────────
+function fillExample(proc, ctx, lang, tone) {
+  document.getElementById('procedure').value = proc;
+  document.getElementById('context').value   = ctx;
+  document.getElementById('language').value  = lang;
+  document.getElementById('tone').value      = tone;
+  document.getElementById('procedure').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ── Generate ───────────────────────────────────────────────────────────────
+async function generate() {
+  const procedure = document.getElementById('procedure').value.trim();
+  const context   = document.getElementById('context').value.trim();
+  const language  = document.getElementById('language').value;
+  const tone      = document.getElementById('tone').value;
+  const errEl     = document.getElementById('error-msg');
+
+  errEl.classList.remove('show');
+
+  if (!procedure) { showError('Please describe the procedure or diagnosis.'); return; }
+  if (!context)   { showError('Please describe the patient context.'); return; }
+
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true;
+  document.getElementById('gen-label').textContent = 'Generating…';
+  document.getElementById('gen-icon').innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;border-color:rgba(0,0,0,0.2);border-top-color:#000"></div>';
+
+  showProgress();
+  setStatus('Planning shots with Claude…');
+
+  try {
+    const r = await fetch('/api/medical/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ procedure, patient_context: context, language, tone })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Generation failed');
+    currentCallId = d.call_id;
+    document.getElementById('prog-title').textContent = d.title || 'Generating…';
+    document.getElementById('prog-summary').textContent = d.summary || '';
+    renderShotCards(d.shots || []);
+    setStatus('Rendering shots in parallel…');
+    subscribeSSE(currentCallId);
+  } catch(e) {
+    showError(e.message);
+    hideProgress();
+    resetBtn();
+  }
+}
+
+function showProgress() {
+  document.getElementById('progress-wrap').classList.add('show');
+  document.getElementById('result-wrap').classList.remove('show');
+  document.getElementById('shots-grid').innerHTML = '';
+  document.getElementById('prog-bar').style.width = '0%';
+  document.getElementById('prog-label').textContent = 'Initialising…';
+}
+
+function hideProgress() {
+  document.getElementById('progress-wrap').classList.remove('show');
+}
+
+function setStatus(msg) {
+  document.getElementById('prog-status-label').textContent = msg;
+}
+
+function renderShotCards(shots) {
+  const grid = document.getElementById('shots-grid');
+  grid.innerHTML = shots.map((s, i) => `
+    <div class="shot-card" id="sc-${i}" style="animation-delay:${i*60}ms">
+      <div class="thumb">
+        <div class="skel"></div>
+        <span class="pill" id="pill-${i}">Planned</span>
+      </div>
+      <div class="caption">${s.narration || s.intent || ''}</div>
+    </div>`).join('');
+}
+
+function updateShotCard(shotId, status, imgSrc, videoSrc) {
+  // find by shot id from shots array — we match by index
+  const idx = shotId;
+  const card = document.getElementById('sc-' + idx);
+  const pill = document.getElementById('pill-' + idx);
+  if (!card) return;
+  const thumb = card.querySelector('.thumb');
+  if (videoSrc) {
+    thumb.innerHTML = `<video src="${videoSrc}?t=${Date.now()}" autoplay muted loop playsinline></video><span class="pill done" id="pill-${idx}">Done</span>`;
+  } else if (imgSrc) {
+    thumb.innerHTML = `<img src="${imgSrc}?t=${Date.now()}"><span class="pill keyframe" id="pill-${idx}">Keyframe</span>`;
+    if (status === 'rendering') {
+      const skel = document.createElement('div');
+      skel.className = 'skel'; skel.style.cssText = 'position:absolute;inset:0;background:transparent';
+      thumb.appendChild(skel);
+    }
+  }
+  if (pill) pill.className = `pill ${status}`;
+}
+
+function subscribeSSE(callId) {
+  if (es) es.close();
+  es = new EventSource('/events/' + callId);
+
+  es.addEventListener('snapshot', async e => {
+    const snap = JSON.parse(e.data);
+    applySnapshot(snap);
+  });
+
+  ['shot.status', 'shot.keyframe', 'shot.clip'].forEach(ev => {
+    es.addEventListener(ev, async () => {
+      const r = await fetch('/api/session/' + callId);
+      if (r.ok) applySnapshot(await r.json());
+    });
+  });
+
+  es.addEventListener('session.finalized', async () => {
+    setStatus('Stitching final video…');
+    // trigger finalize
+    try {
+      const r = await fetch(`/api/finalize/${callId}`, { method: 'POST' });
+      const d = await r.json();
+      if (r.ok) {
+        setTimeout(async () => {
+          const rs = await fetch('/api/session/' + callId);
+          if (rs.ok) applySnapshot(await rs.json());
+        }, 1000);
+      }
+    } catch(e) {}
+  });
+}
+
+function applySnapshot(snap) {
+  const shots = snap.shots || [];
+  const done  = shots.filter(s => s.status === 'done').length;
+  const total = shots.length;
+  const pct   = total ? Math.round(done / total * 100) : 0;
+  document.getElementById('prog-bar').style.width = pct + '%';
+  document.getElementById('prog-label').textContent = `${done} of ${total} shots rendered · ${pct}%`;
+
+  shots.forEach((s, i) => {
+    const videoFile = s.clip_path  ? s.clip_path.split('/').pop()      : null;
+    const imgFile   = s.keyframe_path ? s.keyframe_path.split('/').pop() : null;
+    const videoSrc  = videoFile ? `/videos/${snap.call_id}/clips/${videoFile}` : null;
+    const imgSrc    = imgFile   ? `/videos/${snap.call_id}/keyframes/${imgFile}` : null;
+    updateShotCard(i, s.status, imgSrc, videoSrc);
+  });
+
+  if (snap.final_video_path) {
+    const fname = snap.final_video_path.split('/').pop();
+    showResult(snap.title, snap.summary || snap.brief || '', `/videos/${snap.call_id}/${fname}`, snap.call_id);
+    es && es.close();
+    resetBtn();
+  } else if (done === total && total > 0) {
+    setStatus('All shots done — stitching…');
+  }
+}
+
+function showResult(title, summary, videoUrl, callId) {
+  hideProgress();
+  document.getElementById('result-wrap').classList.add('show');
+  document.getElementById('result-title').textContent = title || 'Video ready';
+  document.getElementById('result-summary').textContent = summary;
+  document.getElementById('result-video').src = videoUrl + '?t=' + Date.now();
+  document.getElementById('download-btn').href = videoUrl;
+  document.getElementById('download-btn').download = (title || 'patient-education') + '.mp4';
+  document.getElementById('result-video').play().catch(() => {});
+  window.__videoUrl = videoUrl;
+  window.__callId = callId;
+}
+
+function copyLink() {
+  const url = window.location.origin + (window.__videoUrl || '');
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    btn.style.color = 'var(--success)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1800);
+  });
+}
+
+async function sendToPatient() {
+  const phone = document.getElementById('patient-phone').value.trim();
+  if (!phone) { alert('Enter patient phone number'); return; }
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const r = await fetch('/api/medical/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, call_id: window.__callId, video_url: window.__videoUrl })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      btn.textContent = '✓ Sent!';
+      btn.style.background = 'var(--success)';
+    } else {
+      btn.textContent = 'Failed — ' + (d.error || 'try again');
+      btn.disabled = false;
+    }
+  } catch(e) {
+    btn.textContent = 'Error'; btn.disabled = false;
+  }
+}
+
+function generateNew() {
+  document.getElementById('result-wrap').classList.remove('show');
+  document.getElementById('progress-wrap').classList.remove('show');
+  document.getElementById('procedure').focus();
+  currentCallId = null;
+  if (es) { es.close(); es = null; }
+}
+
+function resetBtn() {
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = false;
+  document.getElementById('gen-label').textContent = 'Generate patient video';
+  document.getElementById('gen-icon').textContent = '→';
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('show');
+}
+</script>
+</body></html>

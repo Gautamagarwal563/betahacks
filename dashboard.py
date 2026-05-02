@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -2880,6 +2881,102 @@ async def api_improve_prompt(call_id: str, shot_index: int, req: Request):
         return {"ok": True, "improved_prompt": improved}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+
+# ─────────────────────────────────────────────
+# Medical patient education routes
+# ─────────────────────────────────────────────
+
+import medical_director as _med_dir
+
+
+@app.get("/medical", response_class=HTMLResponse)
+def medical_page(request: Request):
+    return _templates.TemplateResponse(request, "medical.html")
+
+
+@app.post("/api/medical/generate")
+async def api_medical_generate(req: Request):
+    """Doctor submits form → Claude plans shots → pipeline renders → return call_id."""
+    data = await req.json()
+    procedure = (data.get("procedure") or "").strip()
+    patient_context = (data.get("patient_context") or "").strip()
+    language = (data.get("language") or "English").strip()
+    tone = (data.get("tone") or "reassuring").strip()
+
+    if not procedure:
+        return JSONResponse({"error": "procedure is required"}, status_code=400)
+
+    # 1. Claude generates the shot plan
+    try:
+        plan = _med_dir.generate_plan(procedure, patient_context, language, tone)
+    except Exception as e:
+        return JSONResponse({"error": f"Director failed: {e}"}, status_code=500)
+
+    if not isinstance(plan, dict) or not plan.get("shots"):
+        return JSONResponse({"error": "Bad plan from director"}, status_code=500)
+
+    # 2. Build a Session from the plan
+    call_id = f"med_{uuid.uuid4().hex[:10]}"
+    sess = director.Session(
+        call_id=call_id,
+        title=plan.get("title", procedure[:40]),
+        brief=plan.get("summary", ""),
+    )
+
+    for i, s in enumerate(plan["shots"]):
+        shot = director.Shot(
+            id=f"sh_{uuid.uuid4().hex[:8]}",
+            index=i,
+            intent=s.get("intent", ""),
+            prompt=s.get("prompt", ""),
+            narration=s.get("narration", ""),
+            duration=float(s.get("duration", 8)),
+            status=director.ShotStatus.PLANNED,
+        )
+        sess.shots.append(shot)
+
+    director.dump_session(sess)
+
+    # 3. Kick off async render (non-blocking)
+    pipeline.render_shots(sess, sess.shots)
+
+    return {
+        "ok": True,
+        "call_id": call_id,
+        "title": sess.title,
+        "summary": sess.brief,
+        "language": plan.get("language", language),
+        "shot_count": len(sess.shots),
+        "shots": [
+            {
+                "index": s.index,
+                "intent": s.intent,
+                "narration": s.narration,
+                "duration": s.duration,
+            }
+            for s in sess.shots
+        ],
+    }
+
+
+@app.post("/api/medical/send")
+async def api_medical_send(req: Request):
+    """Placeholder: SMS the patient a link to their video."""
+    data = await req.json()
+    patient_phone = (data.get("patient_phone") or "").strip()
+    call_id = (data.get("call_id") or "").strip()
+    if not patient_phone or not call_id:
+        return JSONResponse({"error": "patient_phone and call_id required"}, status_code=400)
+
+    # TODO: integrate Twilio when key is available
+    video_url = f"{os.getenv('PUBLIC_URL', 'http://localhost:8000')}/call/{call_id}"
+    return {
+        "ok": True,
+        "message": f"(demo) Would SMS {patient_phone}: Your doctor sent you a video — {video_url}",
+        "video_url": video_url,
+    }
 
 
 if __name__ == "__main__":
